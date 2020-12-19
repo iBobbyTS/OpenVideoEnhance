@@ -1,0 +1,7 @@
+.git/
+__pycache__/
+vrt/model_weights/
+.ipynb_checkpoints
+.idea/
+vrt/plugins
+vrt/tmp
