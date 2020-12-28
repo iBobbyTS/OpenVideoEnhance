@@ -12,7 +12,7 @@ from .model import DynFilter, DFNet, BMNet
 class rter:
     torch.set_grad_enabled(False)
 
-    def __init__(self, sf, height, width, model_directory='model_weights/BMBC/Official.pth', *args, **kwargs):
+    def __init__(self, coef, height, width, model_directory='model_weights/BMBC/official.pth', *args, **kwargs):
         self.model = dict()
         state_dict = torch.load(model_directory)
         self.model['context_layer'] = nn.Conv2d(3, 64, (7, 7), stride=(1, 1), padding=(3, 3), bias=False)
@@ -33,7 +33,7 @@ class rter:
 
         if torch.cuda.is_available():
             self.model['BMNet'].cuda()
-            self.model['DF_Net'].cuda()
+            self.model['DFNet'].cuda()
             self.model['context_layer'].cuda()
             self.model['filtering'].cuda()
             self.ReLU.cuda()
@@ -47,7 +47,7 @@ class rter:
         self._W = self.W / float(self.W_)
         self.size = (self.H, self.W)
         self.size_ = (self.H_, self.W_)
-        self.time_step = [_ / sf for _ in range(1, sf)]
+        self.time_step = [_ / coef for _ in range(1, coef)]
 
     def init_batch(self, buffer):
         self.inited = False

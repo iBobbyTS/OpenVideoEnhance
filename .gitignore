@@ -5,3 +5,5 @@ vrt/model_weights/
 .idea/
 vrt/plugins
 vrt/tmp
+out/
+checkpoints/

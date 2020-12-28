@@ -7,70 +7,64 @@ from ..my_package.FlowProjection import FlowProjectionModule  # ,FlowFillholeMod
 from ..my_package.DepthFlowProjection import DepthFlowProjectionModule
 from ..Stack import Stack
 from utils.io_utils import empty_cache
-from .. import PWCNet
-from .. import S2D_models
-from .. import Resblock
-from .. import MegaDepth
+from ..PWCNet import pwc_dc_net
+from ..S2D_models import S2DF_3dense
+from ..Resblock import MultipleBasicBlock_4
+from ..MegaDepth import HourGlass
 
 
 class DAIN_slowmotion(torch.nn.Module):
     def __init__(self,
+                 padding,
                  channel=3,
                  filter_size=4,
                  timestep=0.5,
-                 save_which=1,
-                 training=True):
+                 training=True,
+                 useAnimationMethod=0,
+                 rectify=False):
 
         # base class initialization
         super(DAIN_slowmotion, self).__init__()
-
+        
         self.filter_size = filter_size
         self.training = training
+        self.useAnimationMethod = useAnimationMethod
+        self.rectify = rectify
+        self.padding = padding
+
         self.timestep = timestep
-        self.save_which = save_which
-        self.numFrames = int(1.0 / timestep) - 1
-        # print("Interpolate " +str( self.numFrames )+ " frames")
+        self.numFrames =int(1.0/timestep) - 1
+   
         i = 0
         self.initScaleNets_filter, self.initScaleNets_filter1, self.initScaleNets_filter2 = \
-            self.get_MonoNet5(channel if i == 0 else channel + filter_size * filter_size, filter_size * filter_size,
-                              "filter")
+            self.get_MonoNet5(channel if i == 0 else channel + filter_size * filter_size, filter_size * filter_size, "filter")
 
-        self.ctxNet = S2D_models.__dict__['S2DF_3dense']()
+        self.ctxNet = S2DF_3dense()
         self.ctx_ch = 3 * 64 + 3
 
-        self.rectifyNet = Resblock.__dict__['MultipleBasicBlock_4'](
-            3 + 3 + 3 + 2 * 1 + 2 * 2 + 16 * 2 + 2 * self.ctx_ch, 128)
+        self.rectifyNet = MultipleBasicBlock_4(3 + 3 + 3 +2*1+ 2*2 +16*2+ 2 * self.ctx_ch,128) if rectify else lambda: None
 
         self._initialize_weights()
-
+        
         if self.training:
-            self.flownets = PWCNet.__dict__['pwc_dc_net']("PWCNet/pwc_net.pth.tar")
+            self.flownets = pwc_dc_net("PWCNet/pwc_net.pth.tar")
         else:
-            self.flownets = PWCNet.__dict__['pwc_dc_net']()
-        empty_cache()
+            self.flownets = pwc_dc_net()
         self.div_flow = 20.0
 
         # extract depth information
         if self.training:
-            self.depthNet = MegaDepth.__dict__['HourGlass'](
-                "MegaDepth/checkpoints/test_local/best_generalization_net_G.pth")
+            self.depthNet = HourGlass("MegaDepth/checkpoints/test_local/best_generalization_net_G.pth")
         else:
-            self.depthNet = MegaDepth.__dict__['HourGlass']()
-
-        return
+            self.depthNet = HourGlass()
+        self.filterModule = FilterInterpolationModule.interpolation().cuda()
 
     def _initialize_weights(self):
         count = 0
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                # n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                # m.weight.data.normal_(0, math.sqrt(2. / n))
-                # print(m)
-                count += 1
-                # print(count)
-                # weight_init.xavier_uniform(m.weight.data)
+                count+=1
                 nn.init.xavier_uniform_(m.weight.data)
-                # weight_init.kaiming_uniform(m.weight.data, a = 0, mode='fan_in')
                 if m.bias is not None:
                     m.bias.data.zero_()
             elif isinstance(m, nn.BatchNorm2d):
@@ -79,10 +73,8 @@ class DAIN_slowmotion(torch.nn.Module):
             elif isinstance(m, nn.Linear):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
-            # else:
-            #     print(m)
 
-    def forward(self, input):
+    def forward(self, input_0, input_2):
 
         """
         Parameters
@@ -91,7 +83,7 @@ class DAIN_slowmotion(torch.nn.Module):
         -----------
         """
         losses = []
-        offsets = []
+        offsets= []
         filters = []
         occlusions = []
 
@@ -101,122 +93,162 @@ class DAIN_slowmotion(torch.nn.Module):
         s1 = torch.cuda.current_stream()
         s2 = torch.cuda.current_stream()
 
-        # STEP 1: sequeeze the input
-        if self.training:
-            assert input.size(0) == 3
-            input_0, input_1, input_2 = torch.squeeze(input, dim=0)
-        else:
-            assert input.size(0) == 2
-            input_0, input_2 = torch.squeeze(input, dim=0)
+        '''
+            STEP 1: sequeeze the input 
+        '''
 
-        # prepare the input data of current scale
+        alpha = False       
+        if input_0.size(1) == 4:
+            #print("There is an alpha channel")
+            input_0_alpha = input_0[:,3:4,:,:].cuda()
+            input_0 = input_0[:,0:3,:,:].cuda()
+            input_2_alpha = input_2[:,3:4,:,:].cuda()
+            input_2 = input_2[:,0:3,:,:].cuda()
+            alpha = True
+        elif input_0.size(1) == 3:
+            #print("Normal 3 channel image, such as RGB")
+            input_0 = input_0.cuda()
+            input_2 = input_2.cuda()
+        else:
+            print("Bug??")
+
+        #prepare the input data of current scale
         cur_input_0 = input_0
         if self.training == True:
             cur_input_1 = input_1
-        cur_input_2 = input_2
+        cur_input_2 =  input_2
 
-        # STEP 3.2: concatenating the inputs.
+        '''
+            STEP 3.2: concatenating the inputs.
+        '''
         cur_offset_input = torch.cat((cur_input_0, cur_input_2), dim=1)
-        cur_filter_input = cur_offset_input  # torch.cat((cur_input_0, cur_input_2), dim=1)
+        cur_filter_input = cur_offset_input # torch.cat((cur_input_0, cur_input_2), dim=1)
 
-        # STEP 3.3: perform the estimation by the Three subpath Network
-        time_offsets = [kk * self.timestep for kk in range(1, 1 + self.numFrames, 1)]
+        '''
+            STEP 3.3: perform the estimation by the Three subpath Network 
+        '''
+        time_offsets = [kk * self.timestep for kk in range(1, 1+self.numFrames,1)]
 
         with torch.cuda.stream(s1):
-            temp = self.depthNet(torch.cat((cur_filter_input[:, :3, ...],
-                                            cur_filter_input[:, 3:, ...]), dim=0))
-            empty_cache()
+            #temp  = self.depthNet(torch.cat((cur_filter_input[:, :3, ...],
+            #                                 cur_filter_input[:, 3:, ...]),dim=0))
+
+            if self.useAnimationMethod == 1 or self.useAnimationMethod == 2:
+                temp = torch.cat((cur_filter_input[:, :3, ...], cur_filter_input[:, 3:, ...]),dim=0)
+                temp = temp[:, 1:2, :, :]
+            else:
+                temp  = self.depthNet(torch.cat((cur_filter_input[:, :3, ...], cur_filter_input[:, 3:, ...]),dim=0))
+
             log_depth = [temp[:cur_filter_input.size(0)], temp[cur_filter_input.size(0):]]
-            if self.save_which:
-                cur_ctx_output = [
-                    torch.cat((self.ctxNet(cur_filter_input[:, :3, ...]),
-                               log_depth[0].detach()), dim=1),
+
+            if self.useAnimationMethod == 1:
+                log_depth = [(d * 0)  for d in log_depth]
+            if self.useAnimationMethod == 2:
+                log_depth = [d  for d in log_depth]
+
+            cur_ctx_output = [
+                torch.cat((self.ctxNet(cur_filter_input[:, :3, ...]),
+                       log_depth[0].detach()), dim=1),
                     torch.cat((self.ctxNet(cur_filter_input[:, 3:, ...]),
-                               log_depth[1].detach()), dim=1)
-                ]
+                   log_depth[1].detach()), dim=1)
+                    ]
             temp = self.forward_singlePath(self.initScaleNets_filter, cur_filter_input, 'filter')
-            empty_cache()
             cur_filter_output = [self.forward_singlePath(self.initScaleNets_filter1, temp, name=None),
-                                 self.forward_singlePath(self.initScaleNets_filter2, temp, name=None)]
-            empty_cache()
-            depth_inv = [1e-6 + 1 / torch.exp(d) for d in log_depth]
+                             self.forward_singlePath(self.initScaleNets_filter2, temp, name=None)]
+
+
+            #depth_inv = [1e-6 + 1 / torch.exp(d) for d in log_depth]
+            if self.useAnimationMethod == 1:
+                depth_inv = [(d * 0) + 1e-6 + 10000 for d in log_depth]
+            else:
+                depth_inv = [1e-6 + 1 / torch.exp(d) for d in log_depth]
 
         with torch.cuda.stream(s2):
-            for _ in range(1):
-                cur_offset_outputs = [
-                    self.forward_flownets(self.flownets, cur_offset_input, time_offsets=time_offsets),
-                    self.forward_flownets(self.flownets, torch.cat((cur_offset_input[:, 3:, ...],
-                                                                    cur_offset_input[:, 0:3, ...]), dim=1),
-                                          time_offsets=time_offsets[::-1])
-                ]
-            empty_cache()
+            cur_offset_outputs = [
+                    self.forward_flownets(self.flownets, cur_input_0, cur_input_2, time_offsets),
+                    self.forward_flownets(self.flownets, cur_input_2, cur_input_0, time_offsets[::-1])
+                    ]
 
-        torch.cuda.synchronize()  # synchronize s1 and s2
+        torch.cuda.synchronize() #synchronize s1 and s2
 
         cur_offset_outputs = [
-            self.FlowProject(cur_offset_outputs[0], depth_inv[0]),
-            self.FlowProject(cur_offset_outputs[1], depth_inv[1])
-        ]
+            self.FlowProject(cur_offset_outputs[0],depth_inv[0]),
+            self.FlowProject(cur_offset_outputs[1],depth_inv[1])
+                ]
 
-        # STEP 3.4: perform the frame interpolation process
-        if self.save_which:
-            cur_output_rectified = []
+        '''
+            STEP 3.4: perform the frame interpolation process 
+        '''
+        cur_output_rectified = []
         cur_output = []
+        
+        for temp_0,temp_1, timeoffset in zip(cur_offset_outputs[0], cur_offset_outputs[1], time_offsets):
+            cur_offset_output = [temp_0,temp_1] #[cur_offset_outputs[0][0], cur_offset_outputs[1][0]]
+            ctx0,ctx2 = self.FilterInterpolate_ctx(self.filterModule, cur_ctx_output[0],cur_ctx_output[1],
+                               cur_offset_output,cur_filter_output, timeoffset)
 
-        for temp_0, temp_1, timeoffset in zip(cur_offset_outputs[0], cur_offset_outputs[1], time_offsets):
-            empty_cache()
-            cur_offset_output = [temp_0, temp_1]  # [cur_offset_outputs[0][0], cur_offset_outputs[1][0]]
-            cur_output_temp, ref0, ref2 = self.FilterInterpolate(cur_input_0, cur_input_2, cur_offset_output,
-                                                                 cur_filter_output, self.filter_size ** 2, timeoffset)
+
+            cur_output_temp ,ref0,ref2 = self.FilterInterpolate(self.filterModule, cur_input_0, cur_input_2,cur_offset_output,
+                                          cur_filter_output,self.filter_size**2, timeoffset)
+
+
+            cur_output_temp = cur_output_temp[:, :, self.padding[2]: self.padding[3], self.padding[0]: self.padding[1]]
+
             cur_output.append(cur_output_temp)
-            # Rectified output
-            if self.save_which:
-                ctx0, ctx2 = self.FilterInterpolate_ctx(cur_ctx_output[0], cur_ctx_output[1],
-                                                        cur_offset_output, cur_filter_output, timeoffset)
-                rectify_input = torch.cat((cur_output_temp, ref0, ref2,
-                                           cur_offset_output[0], cur_offset_output[1],
-                                           cur_filter_output[0], cur_filter_output[1],
-                                           ctx0, ctx2
-                                           ), dim=1)
+
+            if self.rectify:
+                ref0 = ref0[:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]]
+                ref2 = ref2[:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]]
+                ctx0 = ctx0[:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]]
+                ctx2 = ctx2[:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]]
+                rectify_input = torch.cat((cur_output_temp,ref0,ref2,
+                                            cur_offset_output[0][:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]],
+                                            cur_offset_output[1][:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]],
+                                            cur_filter_output[0][:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]],
+                                            cur_filter_output[1][:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]],
+                                            ctx0,ctx2
+                                            ),dim =1)
                 cur_output_rectified_temp = self.rectifyNet(rectify_input) + cur_output_temp
                 cur_output_rectified.append(cur_output_rectified_temp)
 
-        # STEP 3.5: for training phase, we collect the variables to be penalized.
-        if self.training:
-            losses += [cur_output - cur_input_1]
-            losses += [cur_output_rectified - cur_input_1]
-            offsets += [cur_offset_output]
-            filters += [cur_filter_output]
-
-        # STEP 4: return the results
-        if self.training:
+        '''
+            STEP 3.5: for training phase, we collect the variables to be penalized.
+        '''
+        if self.training == True:
+                losses +=[cur_output - cur_input_1]
+                losses += [cur_output_rectified - cur_input_1]                
+                offsets +=[cur_offset_output]
+                filters += [cur_filter_output]
+        '''
+            STEP 4: return the results
+        '''
+        if self.training == True:
             # if in the training phase, we output the losses to be minimized.
             # return losses, loss_occlusion
-            return losses, offsets, filters, occlusions
+            return losses, offsets,filters,occlusions
         else:
-            if self.save_which:
-                return cur_output
-            else:
+            # cur_outputs = [cur_output,cur_output_rectified]
+            # return cur_outputs,cur_offset_output,cur_filter_output
+            if self.rectify:
                 return cur_output_rectified
+            else:
+                return cur_output
 
-    def forward_flownets(self, model, input, time_offsets=None):
+    def forward_flownets(self, model, im1, im2, time_offsets):
 
-        if time_offsets == None:
+        if time_offsets == None :
             time_offsets = [0.5]
         elif type(time_offsets) == float:
             time_offsets = [time_offsets]
         elif type(time_offsets) == list:
             pass
-        temp = model(input)  # this is a single direction motion results, but not a bidirectional one
+        temp = model(im1, im2)  # this is a single direction motion results, but not a bidirectional one
 
-        temps = [self.div_flow * temp * time_offset for time_offset in
-                 time_offsets]  # single direction to bidirection should haven it.
-        temps = [nn.Upsample(scale_factor=4, mode='bilinear')(temp) for temp in
-                 temps]  # nearest interpolation won't be better i think
+        temps = [self.div_flow * temp * time_offset for time_offset in time_offsets]# single direction to bidirection should haven it.
+        temps = [nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True)(temp)  for temp in temps]# nearest interpolation won't be better i think
         return temps
 
     '''keep this function'''
-
     def forward_singlePath(self, modulelist, input, name):
         stack = Stack()
 
@@ -233,7 +265,7 @@ class DAIN_slowmotion(torch.nn.Module):
                 temp = layers(input)
             else:
                 # met a pooling layer, take its input
-                if isinstance(layers, nn.AvgPool2d) or isinstance(layers, nn.MaxPool2d):
+                if isinstance(layers, nn.AvgPool2d) or isinstance(layers,nn.MaxPool2d):
                     stack.push(temp)
 
                 temp = layers(temp)
@@ -241,15 +273,13 @@ class DAIN_slowmotion(torch.nn.Module):
                 # met a unpooling layer, take its output
                 if isinstance(layers, nn.Upsample):
                     if name == 'offset':
-                        temp = torch.cat((temp, stack.pop()),
-                                         dim=1)  # short cut here, but optical flow should concat instead of add
+                        temp = torch.cat((temp,stack.pop()),dim=1)  # short cut here, but optical flow should concat instead of add
                     else:
                         temp += stack.pop()  # short cut here, but optical flow should concat instead of add
             k += 1
         return temp
 
     '''keep this funtion'''
-
     def get_MonoNet5(self, channel_in, channel_out, name):
 
         '''
@@ -289,49 +319,44 @@ class DAIN_slowmotion(torch.nn.Module):
         model += self.conv_relu_unpool(64, 32, (3, 3), (1, 1), 2)  # THE OUTPUT No.4 UP
 
         # block 10
-        model += self.conv_relu_unpool(32, 16, (3, 3), (1, 1), 2)  # THE OUTPUT No.5 UP
+        model += self.conv_relu_unpool(32,  16, (3, 3), (1, 1), 2)  # THE OUTPUT No.5 UP
 
         # output our final purpose
         branch1 = []
         branch2 = []
-        branch1 += self.conv_relu_conv(16, channel_out, (3, 3), (1, 1))
-        branch2 += self.conv_relu_conv(16, channel_out, (3, 3), (1, 1))
+        branch1 += self.conv_relu_conv(16, channel_out,  (3, 3), (1, 1))
+        branch2 += self.conv_relu_conv(16, channel_out,  (3, 3), (1, 1))
 
-        return (nn.ModuleList(model), nn.ModuleList(branch1), nn.ModuleList(branch2))
+        return  (nn.ModuleList(model), nn.ModuleList(branch1), nn.ModuleList(branch2))
 
     '''keep this function'''
-
     @staticmethod
-    def FlowProject(inputs, depth=None):
+    def FlowProject(inputs, depth = None):
         if depth is not None:
-            outputs = [DepthFlowProjectionModule(input.requires_grad)(input, depth) for input in inputs]
+            outputs = [DepthFlowProjectionModule(input.requires_grad)(input,depth) for input in inputs]
         else:
-            outputs = [FlowProjectionModule(input.requires_grad)(input) for input in inputs]
+            outputs = [ FlowProjectionModule(input.requires_grad)(input) for input in inputs]
         return outputs
 
-    '''keep this function'''
 
+    '''keep this function'''
     @staticmethod
-    def FilterInterpolate_ctx(ctx0, ctx2, offset, filter, timeoffset):
+    def FilterInterpolate_ctx(filterModule, ctx0,ctx2,offset,filter, timeoffset):
         ##TODO: which way should I choose
 
-        ctx0_offset = FilterInterpolationModule()(ctx0, offset[0].detach(), filter[0].detach())
-        ctx2_offset = FilterInterpolationModule()(ctx2, offset[1].detach(), filter[1].detach())
-
-        empty_cache()
+        ctx0_offset = filterModule(ctx0,offset[0].detach(),filter[0].detach())
+        ctx2_offset = filterModule(ctx2,offset[1].detach(),filter[1].detach())
 
         return ctx0_offset, ctx2_offset
         # ctx0_offset = FilterInterpolationModule()(ctx0.detach(), offset[0], filter[0])
         # ctx2_offset = FilterInterpolationModule()(ctx2.detach(), offset[1], filter[1])
         #
         # return ctx0_offset, ctx2_offset
-
     '''Keep this function'''
-
     @staticmethod
-    def FilterInterpolate(ref0, ref2, offset, filter, filter_size2, time_offset):
-        ref0_offset = FilterInterpolationModule()(ref0, offset[0], filter[0])
-        ref2_offset = FilterInterpolationModule()(ref2, offset[1], filter[1])
+    def FilterInterpolate(filterModule, ref0, ref2, offset, filter,filter_size2, time_offset):
+        ref0_offset = filterModule(ref0, offset[0],filter[0])
+        ref2_offset = filterModule(ref2, offset[1],filter[1])
 
         # occlusion0, occlusion2 = torch.split(occlusion, 1, dim=1)
         # print((occlusion0[0,0,1,1] + occlusion2[0,0,1,1]))
@@ -340,18 +365,17 @@ class DAIN_slowmotion(torch.nn.Module):
         # automatically broadcasting the occlusion to the three channels of and image.
         # return output
         # return ref0_offset/2.0 + ref2_offset/2.0, ref0_offset,ref2_offset
-        return ref0_offset * (1.0 - time_offset) + ref2_offset * (time_offset), ref0_offset, ref2_offset
+        return ref0_offset*(1.0 - time_offset) + ref2_offset*(time_offset), ref0_offset, ref2_offset
 
     '''keep this function'''
-
     @staticmethod
     def conv_relu_conv(input_filter, output_filter, kernel_size,
-                       padding):
+                        padding):
 
         # we actually don't need to use so much layer in the last stages.
         layers = nn.Sequential(
             nn.Conv2d(input_filter, input_filter, kernel_size, 1, padding),
-            nn.ReLU(inplace=False),
+            nn.ReLU(inplace=True),
             nn.Conv2d(input_filter, output_filter, kernel_size, 1, padding),
             # nn.ReLU(inplace=False),
             # nn.Conv2d(output_filter, output_filter, kernel_size, 1, padding),
@@ -360,28 +384,27 @@ class DAIN_slowmotion(torch.nn.Module):
         )
         return layers
 
-    '''keep this fucntion'''
 
+    '''keep this fucntion'''
     @staticmethod
     def conv_relu(input_filter, output_filter, kernel_size,
-                  padding):
+                        padding):
         layers = nn.Sequential(*[
-            nn.Conv2d(input_filter, output_filter, kernel_size, 1, padding),
+            nn.Conv2d(input_filter,output_filter,kernel_size,1, padding),
 
-            nn.ReLU(inplace=False)
+            nn.ReLU(inplace=True)
         ])
         return layers
 
     '''keep this function'''
-
     @staticmethod
     def conv_relu_maxpool(input_filter, output_filter, kernel_size,
-                          padding, kernel_size_pooling):
+                            padding,kernel_size_pooling):
 
         layers = nn.Sequential(*[
-            nn.Conv2d(input_filter, output_filter, kernel_size, 1, padding),
+            nn.Conv2d(input_filter,output_filter,kernel_size,1, padding),
 
-            nn.ReLU(inplace=False),
+            nn.ReLU(inplace=True),
 
             # nn.BatchNorm2d(output_filter),
 
@@ -390,20 +413,20 @@ class DAIN_slowmotion(torch.nn.Module):
         return layers
 
     '''klkeep this function'''
-
     @staticmethod
     def conv_relu_unpool(input_filter, output_filter, kernel_size,
-                         padding, unpooling_factor):
+                            padding,unpooling_factor):
 
         layers = nn.Sequential(*[
 
-            nn.Upsample(scale_factor=unpooling_factor, mode='bilinear'),
+            nn.Upsample(scale_factor=unpooling_factor, mode='bilinear', align_corners=True),
 
-            nn.Conv2d(input_filter, output_filter, kernel_size, 1, padding),
+            nn.Conv2d(input_filter,output_filter,kernel_size,1, padding),
 
-            nn.ReLU(inplace=False),
+            nn.ReLU(inplace=True),
 
             # nn.BatchNorm2d(output_filter),
+
 
             # nn.UpsamplingBilinear2d(unpooling_size,scale_factor=unpooling_size[0])
         ])

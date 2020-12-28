@@ -6,7 +6,8 @@ from numpy import load, save, savez_compressed
 from cv2 import imread, imwrite, resize, VideoCapture, VideoWriter, VideoWriter_fourcc
 import torch
 
-from utils.io_checker import listdir, check_dir_availability
+from utils.io_checker import check_dir_availability
+from utils.io_utils import listdir
 
 
 class DataLoader:
@@ -50,10 +51,10 @@ class DataLoader:
                     f"{join(ffmpeg_dir, 'ffprobe')} -hide_banner -v quiet -select_streams v -show_entries "
                     'stream=codec_name,height,width,r_frame_rate,nb_frames '
                     f"-print_format json '{input_dir}'"))['streams'][0]
-                codec_name = ffprobe_out['codec_name']
+                self.codec_name = ffprobe_out['codec_name']
                 if hardware_decoder and hardware_decoder in self.hwaccel_name.keys():
-                    hardware_decoder = f'_{self.hwaccel_name[hardware_decoder]}' if hardware_decoder else ''
-                    cmd.extend(['-c:v', f'{codec_name}_{hardware_decoder}'])
+                    hardware_decoder = f'{self.hwaccel_name[hardware_decoder]}' if hardware_decoder else ''
+                    cmd.extend(['-c:v', f'{self.codec_name}_{hardware_decoder}'])
                 cmd.extend(['-i', f"'{input_dir}'"])
                 video_filter = []
                 if frame_range[0] or frame_range[1]:
@@ -209,14 +210,15 @@ class DataWriter:
 
 
 class DataBuffer:
-    def __init__(self, video: DataLoader):
+    def __init__(self, video: DataLoader, buffer_size=2):
         self.video = video
         self.buff = []
         self.buff_frame_index = {}
+        self.buffer_size = buffer_size
 
     def get_frame(self, frame_index):
         if frame_index not in self.buff_frame_index.keys():
-            if len(self.buff) > 10:
+            if len(self.buff) > self.buffer_size:
                 self.buff.pop(0)
                 del self.buff_frame_index[tuple(self.buff_frame_index.keys())[0]]
             frame = self.video.read(frame_index)

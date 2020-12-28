@@ -5,6 +5,13 @@ from torch.autograd import Variable
 from torch.autograd import gradcheck
 from .FilterInterpolationLayer import FilterInterpolationLayer, WeightLayer, PixelValueLayer, PixelWeightLayer, ReliableWeightLayer
 
+__all__ = ['interpolation']
+
+
+def interpolation(path=None):
+    model = FilterInterpolationModule()
+    return model
+
 
 class FilterInterpolationModule(Module):
     def __init__(self):

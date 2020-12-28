@@ -2,7 +2,7 @@
 import os
 import torch
 
-__all__ = ('listdir', 'check_model', 'empty_cache', 'path2list', 'detect_input_type', 'check_dir_availability', 'solve_start_end_frame')
+from .io_utils import listdir
 
 
 def path2list(path):
@@ -10,23 +10,6 @@ def path2list(path):
     out.extend(os.path.splitext(out[1]))
     out.pop(1)
     return out
-
-
-# Empty cache
-if 'CUDA_EMPTY_CACHE' in os.environ and int(os.environ['CUDA_EMPTY_CACHE']):
-    empty_cache = torch.cuda.empty_cache
-else:
-    empty_cache = lambda: None
-
-
-def listdir(folder):  # 输入文件夹路径，输出文件夹内的文件，排序并移除可能的无关文件
-    disallow = ['.DS_Store', '.ipynb_checkpoints', '$RECYCLE.BIN', 'Thumbs.db', 'desktop.ini']
-    files = []
-    for file in os.listdir(folder):
-        if file not in disallow and file[:2] != '._':
-            files.append(file)
-    files.sort()
-    return files
 
 
 def check_model(paths):
@@ -70,14 +53,3 @@ def check_dir_availability(dire, ext=''):
         os.mkdir(dire)
     return dire
 
-
-def solve_start_end_frame(frame_range, frame_count):
-    start_frame, end_frame = frame_range
-    if end_frame == 0 or end_frame >= frame_count:
-        copy = True
-        end_frame = frame_count
-    else:
-        copy = False
-    if start_frame == 0 or start_frame >= frame_count:
-        start_frame = 0
-    return start_frame, end_frame, copy

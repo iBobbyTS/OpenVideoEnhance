@@ -14,39 +14,41 @@ external_opt = {
     'ffmpeg_dir': ''
 }
 input_opt = {
-    'path': '/Users/ibobby/Dataset/resolution_test/gray'
+    'path': '/content/drive/Shareddrives/iBobbyTS/Colab/Test/Video/Test/resolution_test/720p'
 }
 temp_opt = {
-    'path': 'tmp',
+    'path': '/tmp/OpenVideoEnhance',
     'remove': False
 }
 preprocess_opt = {
     'reader': 'ffmpeg',
-    'hardware_decoder': 'apple',
+    'hardware_decoder': 'nvidia',
     'out_fmt': 'tiff',
     'frame_range': (0, 0),
     'resize': False,
-    'crop': False
+    'crop': False,
+    'buffer_size': 2
 }
 model_opt = {
-    'to_do': ['DeOldify'],
-    'model_name': ['video'],
+    'to_do': ['BMBC'],
+    'model_name': ['DAIN_slowmotion'],
     'model_path': [False],
-    'sf': [35],
+    'coef': [3],
     'batch_size': [1],
-    'empty_cache': True
+    'empty_cache': False,
+    'extra_args': [{'rectify': False}]
 }
 postprocess_opt = {
     # Share
-    'type': 'img',
-    'ext': 'png',
-    'codec': 'hevc',  # dtype if type is idf
+    'type': 'vid',
+    'ext': 'mov',
+    'codec': 'hevc',  # vcodec if vid, dtype if type is idf
     'resize': False,
     # Video
     'writer': 'cv2',
     'mac_compatibility': True,
     'fps': 30,
-    'hardware_encoder': 'apple',
+    'hardware_encoder': 'nvidia',
     'extra_video_meta': True,
     'br': False,
     'crf': 20,
@@ -55,7 +57,7 @@ postprocess_opt = {
     # None
 }
 output_opt = {
-    'path': '/Users/ibobby/Dataset/resolution_test/out/120p'
+    'path': '/content/drive/Shareddrives/iBobbyTS/Colab/Project/OpenVideoEnhance/GitHub/OpenVideoEnhance/out/720p.mov'
 }
 
 enhance(external_opt, input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt)

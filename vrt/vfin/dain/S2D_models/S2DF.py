@@ -3,10 +3,8 @@ import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 
-from utils.io_checker import empty_cache
+from utils.io_utils import empty_cache
 
-# __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
-           # 'resnet152','resnet18_conv1']
 __all__ = ['S2DF','S2DF_3dense','S2DF_3dense_nodilation',
            'S2DF_3last','S2DF_2dense', 'BasicBlock']
 

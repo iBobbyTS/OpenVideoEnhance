@@ -47,12 +47,12 @@ class Build:
     @staticmethod
     def SSM(download_model=True):
         if download_model:
-            download_file_from_google_drive('1WTb1C6IAICq5DBlmTSwJ5zQ8AcOGj_vR', 'vfin/ssm/SuperSloMo.ckpt')
+            download_file_from_google_drive('1WTb1C6IAICq5DBlmTSwJ5zQ8AcOGj_vR', 'model_weights/SuperSloMo.ckpt')
 
     def DAIN(self, compute_compatibility=None, download_model=True, build_all=False):
         if compute_compatibility is None:
             compute_compatibility = [37, 61, 60, 70, 75]
-        os.chdir('vfin/DAIN')
+        os.chdir('vfin/dain')
         # Write compiler args
         nvcc_args = []
         for cc in compute_compatibility:
@@ -60,7 +60,7 @@ class Build:
             nvcc_args.append(f'arch=compute_{cc},code=sm_{cc}')
         nvcc_args.append('-w')
         with open('compiler_args.json', 'w') as f:
-            json.dump({'nvcc': nvcc_args, 'cxx': ['-std=c++11', '-w']}, f)
+            json.dump({'nvcc': nvcc_args, 'cxx': ['-std=c++14', '-w']}, f)
         print(f'Compiling for compute compatilility {compute_compatibility}')
         # Compile
         os.chdir('my_package')
@@ -70,19 +70,20 @@ class Build:
         for folder in folders:
             os.chdir(f"{'' if folder == folders[0] else '../'}{folder}")
             os.system(f'{self.python_executable} setup.py {self.build_type}')
-            for file_to_delete in self.terms_to_delete(folder):
-                shutil.rmtree(f'{folder}/{file_to_delete}')
+            for file_to_delete in self.terms_to_delete('.'):
+                shutil.rmtree(file_to_delete)
         os.chdir('../../PWCNet/correlation_package_pytorch1_0')
         os.system(f'{self.python_executable} setup.py {self.build_type}')
         for file_to_delete in self.terms_to_delete('.'):
             shutil.rmtree(file_to_delete)
         os.chdir('../..')
         os.remove('compiler_args.json')
-        os.makedirs('model_weights')
+        os.chdir(self.cwd)
         if download_model:
+            if not os.path.exists('model_weights'):
+                os.mkdir('model_weights')
             download_file_from_google_drive('18_0UwKWnXT3fHw81eZZO0V1arXCAIG3X', 'model_weights/experimental.pth')
             download_file_from_google_drive('10X1XS6E0eUK5hf-5P6qHgWI-U-heVxCk', 'model_weights/best.pth')
-        os.chdir(self.cwd)
 
     def DeOldify(self, download_model=True):
         os.chdir('plugins')

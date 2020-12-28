@@ -12,7 +12,7 @@ class rter:
     warnings.filterwarnings("ignore")
     torch.set_grad_enabled(False)
 
-    def __init__(self, height: int, width: int, batch_size=1, model_directory='model_weights/SSM/Official.pth', *args, **kwargs):
+    def __init__(self, height: int, width: int, batch_size=1, model_directory='model_weights/SSM/official.pth', *args, **kwargs):
         # sf
         self.sf = kwargs['coef']
         self.batch_size = batch_size
@@ -36,11 +36,10 @@ class rter:
         dict1 = torch.load(model_directory, map_location='cpu')
         self.ArbTimeFlowIntrp.load_state_dict(dict1['state_dictAT'])
         self.flowComp.load_state_dict(dict1['state_dictFC'])
-        # Initialize batch
-        self.batch = torch.cuda.FloatTensor(self.batch_size + 1, 3, self.dim[0], self.dim[1]) if self.cuda_availability \
-            else torch.FloatTensor(self.batch_size + 1, 3, self.dim[0], self.dim[1])
 
     def init_batch(self, buffer):
+        self.batch = torch.cuda.FloatTensor(self.batch_size + 1, 3, self.dim[0], self.dim[1]) if self.cuda_availability \
+            else torch.FloatTensor(self.batch_size + 1, 3, self.dim[0], self.dim[1])
         self.inited = False
 
     def store_ndarray_in_tensor(self, frame: numpy.ndarray, index: int):  # 内部调用
@@ -58,6 +57,7 @@ class rter:
                        .astype(numpy.uint8)[:, ::-1, self.h_w[0]:, self.h_w[1]:], (0, 2, 3, 1))
 
     def rt(self, frames: list, *args, **kwargs):
+        print(frames[0].shape)
         if not self.inited:
             self.store_ndarray_in_tensor(frames[0], 0)
             self.inited = True

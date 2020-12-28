@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.init as weight_init
 import torch.utils.model_zoo as model_zoo
 
-from utils.io_checker import empty_cache
+from utils.io_utils import empty_cache
 
 __all__ = ['MultipleBasicBlock', 'MultipleBasicBlock_4']
 

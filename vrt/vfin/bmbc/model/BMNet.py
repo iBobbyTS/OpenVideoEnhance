@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from Bilateral_CostVolume import BilateralCostVolume
 import numpy as np
+
+from ..Bilateral_CostVolume import BilateralCostVolume
 
 
 def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=1, dilation=1):

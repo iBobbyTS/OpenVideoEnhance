@@ -4,19 +4,10 @@ everything_start_time = time()
 
 import os
 
-from utils.io_checker import *
+from utils.io_checker import path2list, detect_input_type, check_dir_availability, check_model
 from utils.io_rw_utils import DataLoader, DataWriter, DataBuffer
-from utils.other import second2time
-
-import vfin
-import sr
-import st
-
-algorithm_sub = {
-    'DAIN': vfin.dain, 'SSM': vfin.ssm, 'BIN': vfin, 'BMBC': vfin,
-    'EDVR': sr.edvr, 'ESRGAN': sr.esrgan,
-    'DeOldify': st.deoldify, 'BOPBL': st, 'BDSN': st
-}
+from utils.other import second2time, solve_start_end_frame
+from utils import modules
 
 
 def enhance(external_opt, input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt):
@@ -87,8 +78,12 @@ def enhance(external_opt, input_opt, temp_opt, preprocess_opt, model_opt, postpr
         # fps and sf
         original_fps = video.fps if input_type == 'video' else postprocess_opt['fps']
         target_fps = original_fps
-        for sf_ in model_opt['sf']:
-            target_fps *= sf_ if sf_ and sf_ is not None else 1
+        for sf_, algorithm in zip(model_opt['coef'], model_opt['to_do']):
+            if modules.belong_to(algorithm) == 'vfin':
+                target_fps *= sf_ if sf_ and sf_ is not None else 1
+        # codec
+        if not postprocess_opt['codec'] and input_type == 'vid':
+            postprocess_opt['codec'] = video.codec_name
         # Start/End frame
         start_frame, end_frame, copy = solve_start_end_frame(preprocess_opt['frame_range'], frame_count)
         saver = DataWriter(
@@ -100,22 +95,22 @@ def enhance(external_opt, input_opt, temp_opt, preprocess_opt, model_opt, postpr
             postprocess_opt['mac_compatibility'], postprocess_opt['extra_video_meta'],
             postprocess_opt['crf'], preprocess_opt['frame_range'] == [0, 0]
         )
-        buffer = DataBuffer(video)
+        buffer = DataBuffer(video, buffer_size=preprocess_opt['buffer_size'])
         # Log
         cag = {}
         # Empty cache
         if model_opt['empty_cache']:
-            os.environ['CUDA_EMPTY_CACHE'] = str(model_opt['empty_cache'])
+            os.environ['CUDA_EMPTY_CACHE'] = str(int(model_opt['empty_cache']))
         # Model checking
         check_model(model_opt['model_path'])
         # Setup models
         restorers = []
-        for algorithm, model_path, coef, model_name in zip(
-                model_opt['to_do'], model_opt['model_path'], model_opt['sf'], model_opt['model_name']):
-            model = algorithm_sub[algorithm](
+        for algorithm, model_path, coef, model_name, extra_args in zip(
+                model_opt['to_do'], model_opt['model_path'], model_opt['coef'], model_opt['model_name'], model_opt['extra_args']):
+            model = modules.get(algorithm)(
                 height=video.height, width=video.width, model_dir=model_path, net_name=model_name,  # General
                 coef=coef,  # VFIN
-                save_witch=1,
+                rectify=extra_args['rectify'],  # DAIN
                 temp_dir=temp_file_path  # DeOldify
             )
             model.init_batch(buffer)
@@ -128,7 +123,7 @@ def enhance(external_opt, input_opt, temp_opt, preprocess_opt, model_opt, postpr
             frames = [buffer.get_frame(i)]
             # Inference
             for model in restorers:
-                frames = model.rt(frames, last=i+1 == end_frame)
+                frames = model.rt(frames, duplicate=i+1 == end_frame)
             for frame in frames:
                 saver.write(frame)
             # Time
