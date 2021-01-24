@@ -1,3 +1,4 @@
 from builder import Build
-builder = Build(check_pytorch_version=False, build_type='install')
-builder.DAIN(compute_compatibility=[70, 60])
+builder = Build()
+builder.DAIN(download_model=False, build_type='install')
+builder.BasicSR(download_model=False)

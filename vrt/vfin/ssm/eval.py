@@ -7,7 +7,7 @@ import cv2
 import torch
 from PIL import Image
 import numpy as np
-import vfin.ssm.model as model
+from . import model
 from torchvision import transforms
 from torch.functional import F
 

@@ -7,3 +7,5 @@ vrt/plugins
 vrt/tmp
 out/
 checkpoints/
+third_party/
+

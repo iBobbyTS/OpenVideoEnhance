@@ -30,21 +30,21 @@ preprocess_opt = {
     'buffer_size': 2
 }
 model_opt = {
-    'to_do': ['BMBC'],
-    'model_name': ['DAIN_slowmotion'],
-    'model_path': [False],
-    'coef': [3],
-    'batch_size': [1],
+    'default_model_path': '/content/model_weights',
     'empty_cache': False,
-    'extra_args': [{'rectify': False}]
+    'to_do': ['BMBC'],
+    'model_name': [False],
+    'model_path': [False],
+    'batch_size': [1],
+    'extra_args': [{}]
 }
 postprocess_opt = {
     # Share
     'type': 'vid',
     'ext': 'mov',
-    'codec': 'hevc',  # vcodec if vid, dtype if type is idf
     'resize': False,
     # Video
+    'codec': 'hevc',
     'writer': 'cv2',
     'mac_compatibility': True,
     'fps': 30,
@@ -53,8 +53,9 @@ postprocess_opt = {
     'br': False,
     'crf': 20,
     # Image
-    # Internal Data Format
     # None
+    # Internal Data Format
+    'dtype': 'uint8'
 }
 output_opt = {
     'path': '/content/drive/Shareddrives/iBobbyTS/Colab/Project/OpenVideoEnhance/GitHub/OpenVideoEnhance/out/720p.mov'
