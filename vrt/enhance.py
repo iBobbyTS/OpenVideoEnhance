@@ -10,55 +10,51 @@ if vrt_root not in [os.path.abspath(path) for path in sys.path]:
 from enhancer import enhance
 
 # Args
-external_opt = {
-    'ffmpeg_dir': ''
-}
 input_opt = {
-    'path': '/content/drive/Shareddrives/iBobbyTS/Colab/Test/Video/Test/resolution_test/720p'
+    'path': '/Users/ibobby/Dataset/resolution_test/480p.mp4'
 }
 temp_opt = {
-    'path': '/tmp/OpenVideoEnhance',
+    'path': '../tmp',
     'remove': False
 }
 preprocess_opt = {
-    'reader': 'ffmpeg',
-    'hardware_decoder': 'nvidia',
-    'out_fmt': 'tiff',
+    'lib': 'ffmpeg',
     'frame_range': (0, 0),
-    'resize': False,
-    'crop': False,
-    'buffer_size': 2
+    # if FFmpeg
+    'decoder': None,
 }
 model_opt = {
-    'default_model_path': '/content/model_weights',
-    'empty_cache': False,
-    'to_do': ['BMBC'],
-    'model_name': [False],
-    'model_path': [False],
-    'batch_size': [1],
-    'extra_args': [{}]
+    'cuda_cache_level': 2,  # cache_level: 0-2
+    'default_model_dir': '../model_weights',
+    'to_do': ['ssm'],
+    'model_path': [None],
+    'args': [[]],
+    'kwargs': [{'sf': 2, 'resize_hotfix': False}]
 }
 postprocess_opt = {
     # Share
-    'type': 'vid',
-    'ext': 'mov',
-    'resize': False,
+    'type': 'img',
+    'lib': 'ffmpeg',
     # Video
-    'codec': 'hevc',
-    'writer': 'cv2',
-    'mac_compatibility': True,
-    'fps': 30,
-    'hardware_encoder': 'nvidia',
-    'extra_video_meta': True,
-    'br': False,
+    # CV2
+    'fourcc': 'hvc1',
+    # FFmpeg
+    'encoder': 'libx265',
+    'pix_fmt': 'yuv420p',
+    'resize': None,
+    'in_fps': 60,
+    # Set out_fps if you want the final fps to be 60 in order not to waste space.
+    # Keep it None unless you know the difference of -r option in FFmpeg for input and output streams.
+    'out_fps': None,
     'crf': 20,
-    # Image
-    # None
+    'ffmpeg-params': '',
+    # Image & Internal Data Format
+    'ext': 'tiff',  # If img
     # Internal Data Format
     'dtype': 'uint8'
 }
 output_opt = {
-    'path': '/content/drive/Shareddrives/iBobbyTS/Colab/Project/OpenVideoEnhance/GitHub/OpenVideoEnhance/out/720p.mov'
+    'path': '/Users/ibobby/Dataset/resolution_test/out/120p'
 }
 
-enhance(external_opt, input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt)
+enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt)
