@@ -3,7 +3,7 @@ from time import time
 
 import torch
 
-from vrt import utils
+from . import str_fmt, folder
 
 __all__ = (
     'empty_cache',
@@ -12,11 +12,18 @@ __all__ = (
     'Timer'
 )
 
-empty_cache = lambda: torch.cuda.empty_cache if int(os.environ.get('CUDA_EMPTY_CACHE', 0)) else lambda: None
+def empty_cache():
+    if int(os.environ.get('CUDA_EMPTY_CACHE', 0)):
+        torch.cuda.empty_cache()
 
-# def empty_cache():
-#     if level := os.environ.get('cuda_cache_level', 0):
-#         pass
+# def empty_cache(lvl):
+#     if lvl:
+#         def fn(l):
+#             if l < lvl:
+#                 torch.cuda.empty_cache()
+#         return fn
+#     else:
+#         return lambda: None
 
 
 def detect_input_type(input_dir):
@@ -44,7 +51,7 @@ def detect_input_type(input_dir):
         else:
             input_type_ = 'vid'
     else:
-        extension = os.path.splitext(utils.folder.listdir(input_dir)[0])[1].replace('.', '')
+        extension = os.path.splitext(folder.listdir(input_dir)[0])[1].replace('.', '').lower()
         if extension == 'npz':
             input_type_ = 'npz'
         elif extension == 'npy':
@@ -80,7 +87,7 @@ def solve_input(inputs):
     inputs = inputs if isinstance(inputs, (list, tuple, set)) else [inputs]
     return_inputs = []
     for i in inputs:
-        return_inputs.append((detect_input_type(i), utils.folder.path2list(i)))
+        return_inputs.append((detect_input_type(i), folder.path2list(i)))
     return return_inputs
 
 
@@ -146,11 +153,11 @@ class Timer:
                     f'\rProcessed batch {frames_processed}/{self.total_count} | '
                     f"{self.frames_left} {'batches' if self.frames_left > 1 else 'batch'} left | "
                     f'Time spent: {round(time_spent, 2)}s | '
-                    f'Time left: {utils.str_fmt.second2time(self.frames_left * self.timer / (frames_processed - 1))} | '
-                    f'Total time spend: {utils.str_fmt.second2time(self.timer + self.initialize_time)}',
+                    f'Time left: {str_fmt.second2time(self.frames_left * self.timer / (frames_processed - 1))} | '
+                    f'Total time spend: {str_fmt.second2time(self.timer + self.initialize_time)}',
                     end='', flush=True)
             else:
                 print(
-                    f'\rFinished processing in {utils.str_fmt.second2time(self.timer + self.initialize_time)}',
+                    f'\rFinished processing in {str_fmt.second2time(self.timer + self.initialize_time)}',
                     flush=True)
         self.count += 1

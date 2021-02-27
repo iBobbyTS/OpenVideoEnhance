@@ -1,86 +1,95 @@
-import warnings
 import os
 
 import numpy
 import torch
 
+from vrt import dictionaries, utils
 from . import networks
-from utils.io_utils import empty_cache
 
 
-class rter:
-    warnings.filterwarnings("ignore")
-    # torch.backends.cudnn.enabled = True
-    # torch.backends.cudnn.benchmark = True
-    torch.set_grad_enabled(False)
-
-    def __init__(self, height: int, width: int, batch_size=1,
-                 model_directory='model_weights/DAIN/best.pth',
-                 *args, **kwargs):
-        # args
-        self.batch_size = batch_size
-        self.rectify = kwargs['rectify']
-
-        # pader
-        if width != ((width >> 7) << 7):
-            intWidth_pad = (((width >> 7) + 1) << 7)  # more than necessary
-            intPaddingLeft = int((intWidth_pad - width) / 2)
-            intPaddingRight = intWidth_pad - width - intPaddingLeft
-        else:
-            intPaddingLeft = 32
-            intPaddingRight = 32
-        if height != ((height >> 7) << 7):
-            intHeight_pad = (((height >> 7) + 1) << 7)  # more than necessary
-            intPaddingTop = int((intHeight_pad - height) / 2)
-            intPaddingBottom = intHeight_pad - height - intPaddingTop
-        else:
-            intPaddingTop = 32
-            intPaddingBottom = 32
-
-        pader = torch.nn.ReplicationPad2d([intPaddingLeft, intPaddingRight, intPaddingTop, intPaddingBottom])
-        self.hs = intPaddingLeft  # Horizontal Start
-        self.he = intPaddingLeft + width
-        self.vs = intPaddingTop
-        self.ve = intPaddingTop + height  # Vertical End
-
-        # Model
-        model = networks.__dict__[kwargs['net_name']](
-            padding=(self.hs, self.he, self.vs, self.ve), channel=3, filter_size=4,
-            timestep=1/kwargs['coef'], rectify=kwargs['rectify'], training=False).cuda()
-        empty_cache()
-
-        model_dict = model.state_dict()
-        pretrained_dict = {k: v for k, v in torch.load(model_directory).items() if k in model_dict}
+class RTer:
+    def __init__(
+            self,
+            height, width,
+            model_path=None, default_model_dir=None,
+            sf=2, resize_hotfix=False,
+            net_name='DAIN_slowmotion', rectify=False, useAnimationMethod=False,
+            *args, **kwargs
+    ):
+        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark = True
+        torch.set_grad_enabled(False)
+        # Save parameters
+        self.sf = sf
+        self.resize_hotfix = resize_hotfix
+        self.network = net_name
+        # Initialize pader
+        self.pader = utils.modeling.Pader(
+            width, height, 128, extend_func='replication'
+        )
+        self.dim = self.pader.paded_size
+        # Solve for model path
+        if model_path is None:
+            model_path = os.path.abspath(os.path.join(
+                default_model_dir, dictionaries.model_paths['dain']
+            ))
+        utils.folder.check_model(model_path)
+        # Initilize model
+        self.model = networks.__dict__[self.network](
+            padding=self.pader.slice,
+            channel=3, filter_size=4,
+            timestep=1/self.sf, rectify=rectify, useAnimationMethod=useAnimationMethod,
+            training=False
+        ).cuda()
+        # Load state dict
+        model_dict = self.model.state_dict()
+        pretrained_dict = {k: v for k, v in torch.load(model_path).items() if k in model_dict}
         model_dict.update(pretrained_dict)
-        model.load_state_dict(model_dict)
-        self.model = model.eval()
+        self.model.load_state_dict(model_dict)
+        self.model.eval()
+        # Initialize batch
+        self.need_to_init = True
 
-        self.ndarray2tensor = lambda frame: pader(torch.unsqueeze((torch.cuda.ByteTensor(frame)[:, :, :3].permute(2, 0, 1).float() / 255), 0))
-        self.batch = torch.cuda.FloatTensor(batch_size + 1, 3, intPaddingTop + height + intPaddingBottom, intPaddingLeft + width + intPaddingRight)
+    def get_output_effect(self):
+        return {
+            'height': 1,
+            'width': 1,
+            'fps': self.sf
+        }
 
-        if kwargs['net_name'] == 'DAIN_slowmotion':
-            self.tensor2ndarray = lambda y_: [(255*item).clamp(0.0, 255.0).byte()[0, :, self.vs:self.ve,self.hs:self.he].permute(1, 2, 0).cpu().numpy() for item in y_]
-        elif kwargs['net_name'] == 'DAIN':
-            self.tensor2ndarray = lambda y_: [(255*item).clamp(0.0, 255.0).byte()[:, self.vs:self.ve,self.hs:self.he].permute(1, 2, 0).cpu().numpy() for item in y_]
+    def ndarray2tensor(self, frame: list):
+        frame = torch.from_numpy(frame[0].copy()).cuda()
+        frame = frame.permute(2, 0, 1)
+        frame = frame.unsqueeze(0)
+        frame = frame.float()
+        frame /= 255.0
+        frame = self.pader.pad(frame)
+        return frame
 
-    def init_batch(self, buffer):
-        self.inited = False
+    def tensor2ndarray(self, tensor):
+        tensor = torch.stack(tensor)
+        if self.resize_hotfix:
+            tensor = utils.modeling.resize_hotfix(tensor)
+        tensor = tensor.clamp(0.0, 1.0)
+        tensor *= 255.0
+        tensor = tensor.byte()
+        tensor = tensor.permute(0, 2, 3, 1)
+        tensor = tensor.cpu().numpy()
+        return tensor
 
-    def store_ndarray_in_tensor(self, frame: numpy.ndarray, index: int):  # 内部调用
-        self.batch[index] = self.ndarray2tensor(frame)
-
-    def rt(self, frames, *args, **kwargs):
-        if not self.inited:
-            self.store_ndarray_in_tensor(frames[0], 0)
-            self.inited = True
-            return [frames[0]]
-
-        for i, f in enumerate(frames, 1):
-            self.store_ndarray_in_tensor(f, i)
-
-        empty_cache()
-        y_ = self.tensor2ndarray(self.model(self.batch[:-1], self.batch[1:]))
-        empty_cache()
-        self.batch[0] = self.batch[1]
-        # print('rter', y_)
-        return y_
+    def rt(self, frame, *args, **kwargs):
+        if self.need_to_init:
+            self.need_to_init = False
+            self.tensor_1 = self.ndarray2tensor(frame)
+            self.ndarray_1 = frame
+            return []
+        self.tensor_0, self.tensor_1 = self.tensor_1, self.ndarray2tensor(frame)
+        self.ndarray_0, self.ndarray_1 = self.ndarray_1, frame
+        I0 = self.tensor_0
+        I1 = self.tensor_1
+        intermediate_frames = self.model(I0, I1)
+        intermediate_frames = self.tensor2ndarray(intermediate_frames)
+        return_ = [self.ndarray_0[0], *intermediate_frames]
+        if kwargs['duplicate']:
+            return_.extend([frame[0], frame[0]])
+        return return_

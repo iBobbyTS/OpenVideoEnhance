@@ -5,7 +5,14 @@ everything_start_time = time()
 import os
 
 import utils
-import dictionaries
+import vfin
+import sr
+
+algorithms = {
+    'ssm': vfin.ssm,
+    'dain': vfin.dain,
+    'esrgan': sr.esrgan
+}
 
 
 def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt):
@@ -72,12 +79,15 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
             preprocess_opt['frame_range'], video.get(7)
         )
 
+        # Empty Cache
+        os.environ['CUDA_EMPTY_CACHE'] = '1'
+
         # Initialize restorers
         restorers = []
         width, height, fps = map(video.get, (3, 4, 5))
         for i, (to_do, model_path, args, kwargs) in enumerate(
                 zip(*map(model_opt.get, ('to_do', 'model_path', 'args', 'kwargs')))):
-            rter = dictionaries.algorithms[to_do](
+            rter = algorithms[to_do](
                 height=height, width=width,
                 model_path=model_path, default_model_dir=model_opt['default_model_dir'],
                 *args, **kwargs
@@ -87,7 +97,6 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
             width *= output_effect['width']
             fps *= output_effect['fps']
             restorers.append(rter)
-
         # Solve for fps
         if (fps_ := postprocess_opt['in_fps']) is not None:
             fps = fps_
@@ -98,16 +107,19 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
         )
         # Start processing
         timer = utils.io.Timer(end - start)
+        x = []
         for i in range(start, end):
             frames = [buffer.get_frame(i)]
             # Inference
             for model in restorers:
                 frames = model.rt(frames, duplicate=(i+1 == end))
             # Save
+            x.append(len(frames))
             for frame in frames:
                 saver.write(frame)
             # Show progress
             timer.print()
         video.close()
-        saver.close()
         del buffer
+        saver.close()
+        print(sum(x))

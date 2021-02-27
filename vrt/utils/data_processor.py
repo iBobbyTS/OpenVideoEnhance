@@ -5,7 +5,7 @@ import threading
 import numpy
 import cv2
 
-from vrt import utils
+from . import folder
 
 
 class DataLoader:
@@ -36,6 +36,7 @@ class DataLoader:
                     command.extend(['-c:v', opt['decoder']])
                 command.extend([
                     '-i', real_path,
+                    *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
                     '-f', 'rawvideo', '-pix_fmt', 'bgr24',
                     '-'
                 ])
@@ -44,7 +45,10 @@ class DataLoader:
                     f"ffprobe -hide_banner -v quiet -select_streams v -show_entries "
                     'stream=height,width,r_frame_rate,nb_frames,codec_tag_string '
                     f"-print_format json '{real_path}'"))['streams'][0]
-                width, height = map(ffprobe_out.get, ('width', 'height'))
+                if (_ := opt['resize']) is None:
+                    width, height = map(ffprobe_out.get, ('width', 'height'))
+                else:
+                    width, height = _
                 frame_count = int(ffprobe_out['nb_frames'])
                 fps = eval(ffprobe_out['r_frame_rate'])
                 fourcc = cv2.VideoWriter_fourcc(*ffprobe_out['codec_tag_string'])
@@ -56,7 +60,7 @@ class DataLoader:
                     dtype='uint8'
                 ).reshape((height, width, 3))
         elif self.input_type == 'img':
-            self.files = utils.folder.listdir(real_path)
+            self.files = folder.listdir(real_path)
             frame_count = len(self.files)
             height, width = cv2.imread(os.path.join(
                 real_path, self.files[0]
@@ -71,12 +75,15 @@ class DataLoader:
                     real_path, self.files[self.count - 1]
                 ))
             elif self.lib == 'ffmpeg':
+                if (_ := opt['resize']) is not None:
+                    width, height = _
                 command = ['ffmpeg', '-loglevel', 'error']
                 if opt['decoder'] is not None:
                     command.extend(['-c:v', opt['decoder']])
                 command.extend([
                     '-pattern_type', 'glob',
                     '-i', f'{real_path}/*{os.path.splitext(self.files[0])[1]}',
+                    *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
                     '-f', 'rawvideo', '-pix_fmt', 'bgr24',
                     '-'
                 ])
@@ -185,7 +192,7 @@ class DataWriter:
             if not ext:
                 ext = self.default['extensions']['vtag'][opt['fourcc']] if self.lib == 'cv2' else \
                     self.default['extensions']['encoder'][opt['encoder']]
-            self.output_path = utils.folder.check_dir_availability(output_path, ext=ext)
+            self.output_path = folder.check_dir_availability(output_path, ext=ext)
             # Solve for output file name
             if self.lib == 'cv2':
                 self.video = cv2.VideoWriter(
@@ -210,9 +217,9 @@ class DataWriter:
                     self.output_path
                 ]
                 self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-                self.write_func = lambda frame: self.pipe.stdin.write(frame.tobytes())
+                self.write_func = lambda frame: (self.pipe.stdin.write(frame.tobytes()), self.pipe.stdin.flush())
         elif self.type == 'img':
-            self.output_path = utils.folder.check_dir_availability(output_path)
+            self.output_path = folder.check_dir_availability(output_path)
             self.ext = opt['ext']
             if self.lib == 'cv2':
                 self.write_func = lambda frame: cv2.imwrite(f"{self.output_path}/{self.count}.{self.ext}", frame)
@@ -227,13 +234,13 @@ class DataWriter:
                     f'{self.output_path}/%d.{self.ext}'
                 ]
                 self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-                self.write_func = lambda frame: self.pipe.stdin.write(frame.tobytes())
+                self.write_func = lambda frame: (self.pipe.stdin.write(frame.tobytes()), self.pipe.stdin.flush())
         self.thread = threading.Thread()
         self.thread.start()
 
     def write(self, obj):
-        self.count += 1
         self.thread.join()
+        self.count += 1
         self.thread = threading.Thread(target=self.write_func, args=(obj,))
         self.thread.start()
 
@@ -241,6 +248,7 @@ class DataWriter:
         if self.type == 'vid' and self.lib == 'cv2':
             self.video.release()
         if self.lib == 'ffmpeg':
+            self.thread.join()
             self.pipe.terminate()
 
 

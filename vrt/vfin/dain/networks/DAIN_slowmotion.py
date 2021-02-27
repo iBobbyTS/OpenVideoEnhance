@@ -6,7 +6,6 @@ from ..my_package.FilterInterpolation import FilterInterpolationModule
 from ..my_package.FlowProjection import FlowProjectionModule  # ,FlowFillholeModule
 from ..my_package.DepthFlowProjection import DepthFlowProjectionModule
 from ..Stack import Stack
-from utils.io_utils import empty_cache
 from ..PWCNet import pwc_dc_net
 from ..S2D_models import S2DF_3dense
 from ..Resblock import MultipleBasicBlock_4
@@ -182,7 +181,7 @@ class DAIN_slowmotion(torch.nn.Module):
         cur_output_rectified = []
         cur_output = []
         
-        for temp_0,temp_1, timeoffset in zip(cur_offset_outputs[0], cur_offset_outputs[1], time_offsets):
+        for temp_0, temp_1, timeoffset in zip(cur_offset_outputs[0], cur_offset_outputs[1], time_offsets):
             cur_offset_output = [temp_0,temp_1] #[cur_offset_outputs[0][0], cur_offset_outputs[1][0]]
             ctx0,ctx2 = self.FilterInterpolate_ctx(self.filterModule, cur_ctx_output[0],cur_ctx_output[1],
                                cur_offset_output,cur_filter_output, timeoffset)
@@ -191,10 +190,9 @@ class DAIN_slowmotion(torch.nn.Module):
             cur_output_temp ,ref0,ref2 = self.FilterInterpolate(self.filterModule, cur_input_0, cur_input_2,cur_offset_output,
                                           cur_filter_output,self.filter_size**2, timeoffset)
 
-
             cur_output_temp = cur_output_temp[:, :, self.padding[2]: self.padding[3], self.padding[0]: self.padding[1]]
 
-            cur_output.append(cur_output_temp)
+            cur_output.append(cur_output_temp[0])
 
             if self.rectify:
                 ref0 = ref0[:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]]
@@ -209,7 +207,7 @@ class DAIN_slowmotion(torch.nn.Module):
                                             ctx0,ctx2
                                             ),dim =1)
                 cur_output_rectified_temp = self.rectifyNet(rectify_input) + cur_output_temp
-                cur_output_rectified.append(cur_output_rectified_temp)
+                cur_output_rectified.append(cur_output_rectified_temp[0])
 
         '''
             STEP 3.5: for training phase, we collect the variables to be penalized.

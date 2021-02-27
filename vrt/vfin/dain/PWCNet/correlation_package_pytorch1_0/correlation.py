@@ -3,7 +3,7 @@ from torch.nn.modules.module import Module
 from torch.autograd import Function
 import correlation_cuda
 
-from utils.io_utils import empty_cache
+from utils.io import empty_cache
 
 
 class CorrelationFunction(Function):

@@ -1,6 +1,6 @@
 import os
 import sys
-
+sys.path.insert(0, '/content/OpenVideoEnhance')
 vrt_root = os.path.split(os.path.abspath(__file__))[0]
 if os.getcwd() != vrt_root:
     os.chdir(vrt_root)
@@ -11,7 +11,7 @@ from enhancer import enhance
 
 # Args
 input_opt = {
-    'path': '/Users/ibobby/Dataset/resolution_test/480p.mp4'
+    'path': '/Users/ibobby/Dataset/frame_test.mov'
 }
 temp_opt = {
     'path': '../tmp',
@@ -20,21 +20,22 @@ temp_opt = {
 preprocess_opt = {
     'lib': 'ffmpeg',
     'frame_range': (0, 0),
+    'resize': (64, 48),
     # if FFmpeg
     'decoder': None,
 }
 model_opt = {
-    'cuda_cache_level': 2,  # cache_level: 0-2
+    'empty_cache': True,
     'default_model_dir': '../model_weights',
-    'to_do': ['ssm'],
-    'model_path': [None],
-    'args': [[]],
-    'kwargs': [{'sf': 2, 'resize_hotfix': False}]
+    'to_do': ['ssm', 'esrgan', 'ssm', 'esrgan'],
+    'model_path': [None, None, None, None],
+    'args': [[], [], [], []],
+    'kwargs': [{}, {'mode': 'nearest'}, {}, {'mode': 'nearest'}]
 }
 postprocess_opt = {
     # Share
     'type': 'img',
-    'lib': 'ffmpeg',
+    'lib': 'cv2',
     # Video
     # CV2
     'fourcc': 'hvc1',
@@ -42,11 +43,11 @@ postprocess_opt = {
     'encoder': 'libx265',
     'pix_fmt': 'yuv420p',
     'resize': None,
-    'in_fps': 60,
+    'in_fps': 1,
     # Set out_fps if you want the final fps to be 60 in order not to waste space.
     # Keep it None unless you know the difference of -r option in FFmpeg for input and output streams.
     'out_fps': None,
-    'crf': 20,
+    'crf': 24,
     'ffmpeg-params': '',
     # Image & Internal Data Format
     'ext': 'tiff',  # If img
@@ -54,7 +55,7 @@ postprocess_opt = {
     'dtype': 'uint8'
 }
 output_opt = {
-    'path': '/Users/ibobby/Dataset/resolution_test/out/120p'
+    'path': '/Users/ibobby/Dataset/out/o'
 }
 
 enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt)

@@ -2,7 +2,7 @@
 import torch
 from torch.autograd import Function
 import filterinterpolation_cuda as my_lib
-from utils.io_utils import empty_cache
+from utils.io import empty_cache
 
 
 # Please check how the STN FUNCTION is written :
