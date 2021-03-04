@@ -61,7 +61,7 @@ def listdir(folder) -> list:  # 输入文件夹路径，输出文件夹内的文
     return files
 
 
-def check_model(paths):
+def check_model(model_dir_folder, path, default_path):
     """
         Check if models exist.
 
@@ -70,10 +70,13 @@ def check_model(paths):
         paths : list or str
             File path
     """
-    paths = paths if isinstance(paths, list) else [paths]
-    for path in paths:
-        while not os.path.exists(path):
-            input(f"{path} not found, click return when the file is ready")
+    if path is None:
+        path = os.path.abspath(os.path.join(
+            model_dir_folder, default_path
+        ))
+    while not os.path.exists(path):
+        input(f"{path} not found, click return when the file is ready")
+    return path
 
 
 def check_dir_availability(dire, ext=''):

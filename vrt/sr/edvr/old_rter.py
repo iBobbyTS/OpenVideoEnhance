@@ -7,9 +7,10 @@ import torch
 from basicsr.models.archs.edvr_arch import EDVR
 
 vram = round(int(getoutput(
-            'nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits')) / 1000)
+    'nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits'
+)) / 1000)
 
-models = {  # 'model_name': [model, num_of_frame, enlarge_factor:ef, multiple, max_res]
+models = {  # 'model_name': [[model_args], num_of_frame, enlarge_factor:ef, multiple, {vram:max_res}]
     'ld': [{'num_feat': 128, 'num_reconstruct_block': 40, 'hr_in': True, 'with_predeblur': True}, 5, 1, 16, {16: 994}],
     'ldc': [{'num_feat': 128, 'num_reconstruct_block': 40, 'hr_in': True, 'with_predeblur': True}, 5, 1, 16, {16: 994}],
     'l4r': [{'num_feat': 128, 'num_reconstruct_block': 40}, 5, 4, 4, {16: 288}],

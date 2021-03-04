@@ -20,13 +20,13 @@ class RTer:
         assert model_name in dictionaries.model_paths['esrgan'].keys(), \
             f"Choose nets between {list(dictionaries.model_paths['esrgan'].keys())}"
         # Solve for model path
-        if model_path is None:
-            model_path = os.path.abspath(os.path.join(
-                default_model_dir, dictionaries.model_paths['esrgan'][model_name]
-            ))
-        utils.folder.check_model(model_path)
+        model_path = utils.folder.check_model(default_model_dir, model_path, dictionaries.model_paths['esrgan'][model_name])
         # Check GPU
         self.cuda_availability = torch.cuda.is_available()
+        if self.cuda_availability:
+            torch.backends.cudnn.enabled = True
+            torch.backends.cudnn.benchmark = True
+        # self.cuda_availability = False
         # Initialize model
         interpolate_opt = {
             'mode': mode,
@@ -36,11 +36,11 @@ class RTer:
             num_in_ch=3, num_out_ch=3,
             interpolate_opt=interpolate_opt
         )
+        self.model.load_state_dict((torch.load(model_path)['params']), strict=True)
+        self.model.eval()
         if self.cuda_availability:
             self.model = self.model.cuda()
         # Load state dict
-        self.model.load_state_dict((torch.load(model_path)['params']), strict=True)
-        self.model.eval()
 
     @staticmethod
     def get_output_effect():
@@ -52,10 +52,9 @@ class RTer:
 
     def ndarray2tensor(self, frame: list):
         if self.cuda_availability:
-            frame = torch.from_numpy(frame[0]).cuda()
-            frame = frame.permute(2, 0, 1)
-            frame = frame[[2, 1, 0]]
-            frame = frame.unsqueeze(0)
+            frame = torch.stack([torch.from_numpy(_.copy()).cuda() for _ in frame])
+            frame = frame.permute(0, 3, 1, 2)
+            frame = frame[:, [2, 1, 0]]
             frame = frame.float()
             frame /= 255.0
         else:
@@ -83,7 +82,7 @@ class RTer:
             tensor = tensor.astype(numpy.uint8)
             tensor = tensor[:, [2, 1, 0]]
             tensor = numpy.transpose(tensor, (0, 2, 3, 1))
-        return tensor
+        return list(tensor)
 
     def rt(self, frames: list, *args, **kwargs):
         if not frames:
@@ -92,6 +91,6 @@ class RTer:
         sr_frames = []
         for lr_frame in lr_frames:
             lr_frame = self.model(lr_frame.unsqueeze(0))
-            lr_frame = self.tensor2ndarray(lr_frame)
             sr_frames.append(lr_frame[0])
+        sr_frames = self.tensor2ndarray(sr_frames)
         return sr_frames

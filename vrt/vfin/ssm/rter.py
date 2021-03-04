@@ -1,5 +1,4 @@
 import os
-from time import time
 
 import numpy
 import torch
@@ -18,7 +17,7 @@ class RTer:
     ):
         torch.set_grad_enabled(False)
         # Save parameters
-        self.sf = sf
+        self.sf = round(float(sf))
         self.resize_hotfix = resize_hotfix
         # Initialize pader
         self.pader = utils.modeling.Pader(
@@ -27,13 +26,12 @@ class RTer:
         self.dim = self.pader.paded_size[::-1]
         self.pading_result = self.pader.pading_result
         # Solve for model path
-        if model_path is None:
-            model_path = os.path.abspath(os.path.join(
-                default_model_dir, dictionaries.model_paths['ssm']
-            ))
-        utils.folder.check_model(model_path)
+        model_path = utils.folder.check_model(default_model_dir, model_path, dictionaries.model_paths['ssm'])
         # Check GPU
         self.cuda_availability = torch.cuda.is_available()
+        if self.cuda_availability:
+            torch.backends.cudnn.enabled = True
+            torch.backends.cudnn.benchmark = True
         # self.cuda_availability = False
         self.device = torch.device("cuda:0" if self.cuda_availability else "cpu")
         # Initialize model
@@ -58,9 +56,8 @@ class RTer:
 
     def ndarray2tensor(self, frame: list):
         if self.cuda_availability:
-            frame = torch.from_numpy(frame[0].copy()).cuda()
-            frame = frame.permute(2, 0, 1)
-            frame = frame.unsqueeze(0)
+            frame = torch.stack([torch.from_numpy(_.copy()).cuda() for _ in frame])
+            frame = frame.permute(0, 3, 1, 2)
             frame = frame[:, [2, 1, 0]]
             frame = frame.float()
             frame /= 255.0
@@ -163,5 +160,5 @@ class RTer:
             intermediate_frames = self.tensor2ndarray(intermediate_frames)
             return_.extend([self.ndarray_0, *intermediate_frames])
             if kwargs['duplicate'] and i == len(frames):
-                return_.extend([numpy_frame, numpy_frame])
+                return_.extend([numpy_frame]*self.sf)
         return return_

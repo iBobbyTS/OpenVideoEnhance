@@ -123,7 +123,6 @@ class RRDBNet(nn.Module):
         feat = feat + body_feat
         # Up sample
         feat = self.lrelu(self.conv_up1(F.interpolate(
-            # feat, scale_factor=2, mode='bilinear', align_corners=False
             feat, scale_factor=2, **self.interpolate_opt
         )))
         feat = self.lrelu(self.conv_up2(F.interpolate(

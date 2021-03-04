@@ -65,7 +65,7 @@ class Build:
             import torch
             cuda_extensions = True if torch.cuda.is_available() else False
         # Install packages
-        self.pip_install(['addict', 'future', 'lmdb', 'pyyaml', 'requests', 'scikit-image', 'scipy', 'tb-nightly', 'tqdm', 'yapf'])
+        self.pip_install(['addict', 'future', 'lmdb', 'ninja', 'pyyaml', 'requests', 'scikit-image', 'scipy', 'tb-nightly', 'tqdm', 'yapf'])
         if opt['develop']:
             pass
         os.chdir('../third_party')
@@ -176,7 +176,7 @@ class Build:
             import torch
             cc = ['%d%d' % torch.cuda.get_device_capability()]
         if opt['develop']:
-            self.pip_install(['bisect'])
+            self.pip_install(['bisect', 'ninja'])
         os.chdir('vfin/dain')
         # Write compiler args
         nvcc_args = []

@@ -27,13 +27,8 @@ class RTer:
         self.pader = utils.modeling.Pader(
             width, height, 128, extend_func='replication'
         )
-        self.dim = self.pader.paded_size
         # Solve for model path
-        if model_path is None:
-            model_path = os.path.abspath(os.path.join(
-                default_model_dir, dictionaries.model_paths['dain']
-            ))
-        utils.folder.check_model(model_path)
+        model_path = utils.folder.check_model(default_model_dir, model_path, dictionaries.model_paths['dain'])
         # Initilize model
         self.model = networks.__dict__[self.network](
             padding=self.pader.slice,
@@ -58,12 +53,13 @@ class RTer:
         }
 
     def ndarray2tensor(self, frame: list):
-        frame = torch.from_numpy(frame[0].copy()).cuda()
-        frame = frame.permute(2, 0, 1)
-        frame = frame.unsqueeze(0)
+        frame = [torch.from_numpy(_.copy()).cuda() for _ in frame]
+        frame = torch.stack(frame)
+        frame = frame.permute(0, 3, 1, 2)
         frame = frame.float()
         frame /= 255.0
         frame = self.pader.pad(frame)
+        frame = frame.unsqueeze(1)
         return frame
 
     def tensor2ndarray(self, tensor):
@@ -75,21 +71,31 @@ class RTer:
         tensor = tensor.byte()
         tensor = tensor.permute(0, 2, 3, 1)
         tensor = tensor.cpu().numpy()
-        return tensor
+        return list(tensor)
 
-    def rt(self, frame, *args, **kwargs):
-        if self.need_to_init:
-            self.need_to_init = False
-            self.tensor_1 = self.ndarray2tensor(frame)
-            self.ndarray_1 = frame
-            return []
-        self.tensor_0, self.tensor_1 = self.tensor_1, self.ndarray2tensor(frame)
-        self.ndarray_0, self.ndarray_1 = self.ndarray_1, frame
-        I0 = self.tensor_0
-        I1 = self.tensor_1
-        intermediate_frames = self.model(I0, I1)
-        intermediate_frames = self.tensor2ndarray(intermediate_frames)
-        return_ = [self.ndarray_0[0], *intermediate_frames]
-        if kwargs['duplicate']:
-            return_.extend([frame[0], frame[0]])
+    def rt(self, frames, *args, **kwargs):
+        numpy_frames = frames
+        return_ = []
+        if frames:
+            frames = self.ndarray2tensor(frames)
+        else:
+            return frames
+        for i, numpy_frame, frame in zip(range(1, len(numpy_frames)+1), numpy_frames, frames):
+            if self.need_to_init:
+                self.need_to_init = False
+                self.tensor_1 = frame
+                self.ndarray_1 = numpy_frame
+                if len(frames) > 1:
+                    continue
+                else:
+                    return []
+            self.tensor_0, self.tensor_1 = self.tensor_1, frame
+            self.ndarray_0, self.ndarray_1 = self.ndarray_1, numpy_frame
+            I0 = self.tensor_0
+            I1 = self.tensor_1
+            intermediate_frames = self.model(I0, I1)
+            intermediate_frames = self.tensor2ndarray(intermediate_frames)
+            return_.extend([self.ndarray_0, *intermediate_frames])
+            if kwargs['duplicate'] and i == len(frames):
+                return_.extend([numpy_frame]*self.sf)
         return return_

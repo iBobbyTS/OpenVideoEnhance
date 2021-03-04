@@ -11,7 +11,8 @@ import sr
 algorithms = {
     'ssm': vfin.ssm,
     'dain': vfin.dain,
-    'esrgan': sr.esrgan
+    'esrgan': sr.esrgan,
+    'edvr': sr.edvr
 }
 
 

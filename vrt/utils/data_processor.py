@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import threading
 
 import numpy
@@ -87,7 +88,7 @@ class DataLoader:
                     '-f', 'rawvideo', '-pix_fmt', 'bgr24',
                     '-'
                 ])
-                self.pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=10 ** 8)
+                self.pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=100000000)
                 self.info_func = lambda: (
                     (1000 / fps) * (self.count - 1 if self.count > 1 else 0),
                     self.count, self.count == frame_count)
@@ -204,6 +205,7 @@ class DataWriter:
             elif self.lib == 'ffmpeg':
                 command = [
                     'ffmpeg',
+                    # '-flush_packets', '1',
                     '-f', 'rawvideo', '-pix_fmt', 'bgr24',
                     '-s', '%dx%d' % res, '-r', str(fps),
                     '-i', '-',
@@ -226,6 +228,7 @@ class DataWriter:
             elif self.lib == 'ffmpeg':
                 command = [
                     'ffmpeg',
+                    # '-flush_packets', '1',
                     '-f', 'rawvideo', '-pix_fmt', 'bgr24',
                     '-s', '%dx%d' % res,
                     '-i', '-',
@@ -249,6 +252,7 @@ class DataWriter:
             self.video.release()
         if self.lib == 'ffmpeg':
             self.thread.join()
+            self.pipe.communicate()
             self.pipe.terminate()
 
 

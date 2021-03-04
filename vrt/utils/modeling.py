@@ -1,3 +1,4 @@
+import math
 import numpy
 import torch
 import cv2
@@ -57,3 +58,15 @@ class Pader:
 
     def pad(self, tensor):
         return self.pader(tensor)
+
+
+def cal_split(h_w, max_side_length):
+    splition = []
+    for i in range(math.ceil(h_w[0] / max_side_length)):
+        for j in range(math.ceil(h_w[1] / max_side_length)):
+            ws = i * max_side_length
+            we = (i + 1) * max_side_length if (i + 1) * max_side_length <= h_w[0] else h_w[0]
+            hs = j * max_side_length
+            he = (j + 1) * max_side_length if (j + 1) * max_side_length <= h_w[1] else h_w[1]
+            splition.append([ws, we, hs, he])
+    return splition
