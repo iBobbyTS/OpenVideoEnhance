@@ -3,17 +3,9 @@ from time import time
 everything_start_time = time()
 
 import os
+import copy as copylib
 
-import utils
-import vfin
-import sr
-
-algorithms = {
-    'ssm': vfin.ssm,
-    'dain': vfin.dain,
-    'esrgan': sr.esrgan,
-    'edvr': sr.edvr
-}
+from vrt import utils
 
 
 def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt):
@@ -86,9 +78,10 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
         # Initialize restorers
         restorers = []
         width, height, fps = map(video.get, (3, 4, 5))
-        for i, (to_do, model_path, args, kwargs) in enumerate(
-                zip(*map(model_opt.get, ('to_do', 'model_path', 'args', 'kwargs')))):
-            rter = algorithms[to_do](
+        for i, (to_do, model_path, args, kwargs) in enumerate(zip(*map(
+            model_opt.get, ('to_do', 'model_path', 'args', 'kwargs')
+        ))):
+            rter = utils.algorithm.get(to_do)(
                 height=height, width=width,
                 model_path=model_path, default_model_dir=model_opt['default_model_dir'],
                 *args, **kwargs
@@ -110,17 +103,19 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
         timer = utils.io.Timer(end - start)
         x = []
         for i in range(start, end):
-            frames = [buffer.get_frame(i)]
+            frames = buffer.get_frame(last=(i+1 == end))
             # Inference
             for model in restorers:
-                frames = model.rt(frames, duplicate=(i+1 == end))
+                frames = model.rt(frames, last=(i+1 == end))
             # Save
             x.append(len(frames))
-            for frame in frames:
-                saver.write(frame)
+            if frames:
+                for frame in copylib.copy(frames).convert(
+                    place='numpy', dtype='uint8', shape_order='fhwc', channel_order='bgr', range_=(0.0, 255.0)
+                ):
+                    saver.write(frame)
             # Show progress
             timer.print()
         video.close()
         del buffer
         saver.close()
-        print(sum(x))

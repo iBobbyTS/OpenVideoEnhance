@@ -1,12 +1,10 @@
-
-import cv2
 from subprocess import getoutput
 
-import numpy
 import torch
 from basicsr.models.archs.edvr_arch import EDVR
 
-from vrt import dictionaries, utils
+from vrt import utils
+from vrt.utils import dictionaries
 
 vram = round(int(getoutput(
     'nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits'
@@ -40,7 +38,7 @@ class RTer:
         self.pader = utils.modeling.Pader(
             width, height, model_pref[3], extend_func='replication', aline_to_edge=True
         )
-        self.dim = self.pader.paded_size
+        self.dim = self.pader.padded_size
         self.ori_dim = (width, height)
         # Calculate splition
         self.splition = utils.modeling.cal_split((self.dim[0], self.dim[1]), max_res)

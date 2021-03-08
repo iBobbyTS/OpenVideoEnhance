@@ -115,4 +115,3 @@ def check_dir_availability(dire, ext=''):
     if not ext:  # Output as folder
         os.makedirs(dire)
     return dire
-

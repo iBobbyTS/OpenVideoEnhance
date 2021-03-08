@@ -1,12 +1,11 @@
 import os
 import subprocess
-import sys
 import threading
 
 import numpy
 import cv2
 
-from . import folder
+from vrt import utils
 
 
 class DataLoader:
@@ -61,7 +60,7 @@ class DataLoader:
                     dtype='uint8'
                 ).reshape((height, width, 3))
         elif self.input_type == 'img':
-            self.files = folder.listdir(real_path)
+            self.files = utils.folder.listdir(real_path)
             frame_count = len(self.files)
             height, width = cv2.imread(os.path.join(
                 real_path, self.files[0]
@@ -97,12 +96,11 @@ class DataLoader:
                     dtype='uint8'
                 ).reshape((height, width, 3))
 
-
         # Public
         self.info = [
             *self.info_func(),  # Time in milliseconds, frame count, start/end
             width, height, fps, fourcc, frame_count,
-            numpy.ndarray
+            numpy.ndarray, numpy.uint8
         ]
 
     def get(self, idx):
@@ -120,6 +118,7 @@ class DataLoader:
         6: Fourcc code
         7: Total frame count
         8: Returning object type of read()
+        9: Returning data type
 
         Returns
         -------
@@ -181,7 +180,7 @@ class DataWriter:
         output path
 
         opt : dict
-        preprocess_opt
+            preprocess_opt
         """
         self.type = opt['type']
         self.lib = opt['lib']
@@ -193,7 +192,7 @@ class DataWriter:
             if not ext:
                 ext = self.default['extensions']['vtag'][opt['fourcc']] if self.lib == 'cv2' else \
                     self.default['extensions']['encoder'][opt['encoder']]
-            self.output_path = folder.check_dir_availability(output_path, ext=ext)
+            self.output_path = utils.folder.check_dir_availability(output_path, ext=ext)
             # Solve for output file name
             if self.lib == 'cv2':
                 self.video = cv2.VideoWriter(
@@ -221,7 +220,7 @@ class DataWriter:
                 self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
                 self.write_func = lambda frame: (self.pipe.stdin.write(frame.tobytes()), self.pipe.stdin.flush())
         elif self.type == 'img':
-            self.output_path = folder.check_dir_availability(output_path)
+            self.output_path = utils.folder.check_dir_availability(output_path)
             self.ext = opt['ext']
             if self.lib == 'cv2':
                 self.write_func = lambda frame: cv2.imwrite(f"{self.output_path}/{self.count}.{self.ext}", frame)
@@ -257,59 +256,35 @@ class DataWriter:
 
 
 class DataBuffer:
-    def __init__(self, video: DataLoader, buff_before=0, buff_after=1, buff_count=3):
-        """
-        Parameters
-        ----------
-        video : DataLoader
-        Loaded video
-
-        buff_before : int
-        How many frames after the frame requesting.
-
-        buff_after : int
-        How many frames before the frame requesting.
-
-        buff_count : int
-        How many frames to be stored in the buffer.
-        """
-        self.buff_before = buff_before
-        self.buff_after = buff_after
-        self.buff_count = buff_count
+    def __init__(self, video: DataLoader):
         self.video = video
-        self.buff = []
-        self.buff_frame_index = {}
-        self.get_thread = lambda frame_index: threading.Thread(target=self.get_frame_ready, args=(frame_index,))
-        self.thread = self.get_thread(0)
+        self.buff = numpy.empty(
+            (2, *map(self.video.get, (4, 3)), 3),
+            dtype=self.video.get(9)
+        )
+        self.buff = utils.tensor.Tensor(
+            tensor=numpy.empty(
+                (2, *map(self.video.get, (4, 3)), 3),
+                dtype=self.video.get(9)),
+            shape_order='fhwc', channel_order='bgr',
+            range_=(0, 255)
+        )
+        self.count = 0
+        # Thread
+        self.get_thread = lambda: threading.Thread(target=self.get_frame_ready)
+        self.thread = self.get_thread()
         self.thread.start()
 
-    def get_frame(self, frame_index):
+    def get_frame(self, last):
         self.thread.join()
-        if frame_index not in self.buff_frame_index.keys():
-            self.thread = self.get_thread(frame_index)
-            self.thread.start()
-            self.thread.join()
-
-        indexes = [
-            *range(
-                _ if (_ := frame_index - self.buff_before) >= 0 else 0, frame_index
-            ),
-            *range(
-                frame_index + 1, _2 if (_ := frame_index + self.buff_after + 1) > (_2 := self.video.get(7)) - 1 else _
-            )
-        ]
-        self.thread = self.get_thread(indexes)
-        returning = self.buff[self.buff_frame_index[frame_index]]
+        if last:
+            i = 1 if self.count else 0
+            return self.buff[i: i+1]
+        returning = self.buff[self.count:self.count+1]
+        self.thread = self.get_thread()
         self.thread.start()
         return returning
 
-    def get_frame_ready(self, frame_indexes):
-        frame_indexes = frame_indexes if isinstance(frame_indexes, list) else [frame_indexes]
-        for frame_index in frame_indexes:
-            if frame_index not in self.buff_frame_index.keys():  # need to buff
-                if len(self.buff) > 10:  # if buffed too much
-                    self.buff.pop(0)
-                    self.buff_frame_index.pop(list(self.buff_frame_index.keys())[0])
-                frame = self.video.read(frame_index)
-                self.buff_frame_index[frame_index] = len(self.buff)
-                self.buff.append(frame)
+    def get_frame_ready(self):
+        self.count += -1 if self.count else 1
+        self.buff[self.count] = self.video.read()

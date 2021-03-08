@@ -1,9 +1,6 @@
 import math
 
-import torch
 import torch.nn as nn
-import torch.nn.init as weight_init
-import torch.utils.model_zoo as model_zoo
 
 from utils.io import empty_cache
 

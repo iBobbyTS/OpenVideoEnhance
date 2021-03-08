@@ -1,15 +1,17 @@
 import os
 import sys
+
 vrt_root = '/'.join(os.path.abspath(__file__).split('/')[:-2])
 if os.getcwd() != vrt_root:
     os.chdir(vrt_root)
 if vrt_root not in [os.path.abspath(path) for path in sys.path]:
     sys.path.append(vrt_root)
+
 from enhancer import enhance
 
 # Args
 input_opt = {
-    'path': '/content/frame_test.mov'
+    'path': '/Users/ibobby/Dataset/frame_test.mov'
 }
 temp_opt = {
     'path': '../tmp',
@@ -24,15 +26,15 @@ preprocess_opt = {
 }
 model_opt = {
     'empty_cache': True,
-    'default_model_dir': '/content/model_weights',
-    'to_do': ['dain', 'edvr', 'ssm', 'esrgan'],
+    'default_model_dir': '/Users/ibobby/PycharmProjects/OpenVideoEnhance_old/vrt/model_weights',
+    'to_do': ['esrgan', 'ssm', 'esrgan'],
     'model_path': [None]*7,
     'args': [[]]*7,
-    'kwargs': [{'model_name': 'ldc'}, {'sf': 3}, {}, {'sf': 4}, {}, {}, {}, {}]
+    'kwargs': [{'mode': 'nearest'}, {'sf': 3}, {}, {'sf': 4}, {}, {}, {}, {}]
 }
 postprocess_opt = {
     # Share
-    'type': 'vid',
+    'type': 'img',
     'lib': 'ffmpeg',
     # Video
     # CV2
@@ -53,7 +55,7 @@ postprocess_opt = {
     'dtype': 'uint8'
 }
 output_opt = {
-    'path': '/content/out/o'
+    'path': '/Users/ibobby/Dataset/out/o'
 }
 
 enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt)

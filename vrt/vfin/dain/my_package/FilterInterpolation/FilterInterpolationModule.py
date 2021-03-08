@@ -1,8 +1,6 @@
 # modules/AdaptiveInterpolationLayer.py
 import torch
 from torch.nn import Module
-from torch.autograd import Variable
-from torch.autograd import gradcheck
 from .FilterInterpolationLayer import FilterInterpolationLayer, WeightLayer, PixelValueLayer, PixelWeightLayer, ReliableWeightLayer
 
 __all__ = ['interpolation']

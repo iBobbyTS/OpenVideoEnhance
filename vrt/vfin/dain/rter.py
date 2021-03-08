@@ -1,9 +1,7 @@
-import os
-
-import numpy
 import torch
 
-from vrt import dictionaries, utils
+from vrt import utils
+from ...utils import dictionaries
 from . import networks
 
 

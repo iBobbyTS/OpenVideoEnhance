@@ -1,9 +1,7 @@
-import os
-
 import numpy
 import torch
 
-from vrt import dictionaries, utils
+from vrt import utils
 from . import model
 
 
@@ -23,10 +21,10 @@ class RTer:
         self.pader = utils.modeling.Pader(
             width, height, 32, extend_func='replication'
         )
-        self.dim = self.pader.paded_size[::-1]
-        self.pading_result = self.pader.pading_result
+        self.dim = self.pader.padded_size[::-1]
+        self.pading_result = self.pader.padding_result
         # Solve for model path
-        model_path = utils.folder.check_model(default_model_dir, model_path, dictionaries.model_paths['ssm'])
+        model_path = utils.folder.check_model(default_model_dir, model_path, utils.dictionaries.model_paths['ssm'])
         # Check GPU
         self.cuda_availability = torch.cuda.is_available()
         if self.cuda_availability:
@@ -54,77 +52,57 @@ class RTer:
             'fps': self.sf
         }
 
-    def ndarray2tensor(self, frame: list):
-        if self.cuda_availability:
-            frame = torch.stack([torch.from_numpy(_.copy()).cuda() for _ in frame])
-            frame = frame.permute(0, 3, 1, 2)
-            frame = frame[:, [2, 1, 0]]
-            frame = frame.float()
-            frame /= 255.0
-        else:
-            frame = numpy.transpose(frame, (0, 3, 1, 2))
-            frame = frame[:, ::-1]
-            frame = frame.astype('float32')
-            frame /= 255.0
-            frame = torch.FloatTensor(frame)
-        frame = self.pader.pad(frame)
+    def ndarray2tensor(self, frame):
+        if isinstance(frame, (list, tuple)):
+            frame = utils.tensor.stack(frame)
+        frame.convert(
+            place='torch', dtype='float32',
+            shape_order='fchw', channel_order='rgb', range_=(0.0, 1.0)
+        )
+        frame.tensor = self.pader.pad(frame.tensor)
+        frame.unsqueeze(1)
         return frame
 
-    def tensor2ndarray(self, tensor: list):
-        if self.cuda_availability:
-            tensor = torch.stack(tensor)
-            if self.resize_hotfix:
-                tensor = utils.modeling.resize_hotfix(tensor)
-            tensor = tensor.clamp(0.0, 1.0)
-            tensor *= 255.0
-            tensor = tensor.byte()
-            tensor = tensor[
-                :, [2, 1, 0],
-                self.pading_result[2]:(-_ if (_ := self.pading_result[3]) else None),
-                self.pading_result[0]:(-_ if (_ := self.pading_result[1]) else None)
-            ]
-            tensor = tensor.permute(0, 2, 3, 1)
-            tensor = tensor.detach().cpu().numpy()
-        else:
-            tensor = [_.numpy() for _ in tensor]
-            tensor = numpy.stack(tensor)
-            tensor = tensor.clip(0.0, 1.0)
-            tensor *= 255.0
-            tensor = tensor.astype(numpy.uint8)
-            tensor = tensor[
-                :, ::-1,
-                self.pading_result[2]:(-_ if (_ := self.pading_result[3]) else None),
-                self.pading_result[0]:(-_ if (_ := self.pading_result[1]) else None)
-            ]
-            tensor = numpy.transpose(tensor, (0, 2, 3, 1))
-            tensor = utils.modeling.resize_hotfix_numpy(tensor)
+    def tensor2ndarray(self, tensor: utils.tensor.Tensor):
+        tensor.tensor = tensor.tensor[
+            :, :,
+            self.pading_result[2]:(-_ if (_ := self.pading_result[3]) else None),
+            self.pading_result[0]:(-_ if (_ := self.pading_result[1]) else None)
+        ]
         return tensor
 
-    def rt(self, frames: list, *args, **kwargs):
-        numpy_frames = frames
-        return_ = []
+    def rt(self, frames: utils.tensor.Tensor, last, *args, **kwargs):
         if frames:
             frames = self.ndarray2tensor(frames)
         else:
             return frames
-        for i, numpy_frame, frame in zip(range(1, len(numpy_frames)+1), numpy_frames, frames):
-            frame = frame.unsqueeze(0)
+        returning_tensor = utils.tensor.Tensor(
+            tensor=torch.empty(
+                (len(frames) * self.sf - (1 if self.need_to_init else 0) * self.sf + (self.sf if last else 0), 3, *self.dim),
+                dtype=torch.float32,
+                device=self.device
+            ),
+            shape_order='fchw', channel_order='rgb',
+            range_=(0.0, 1.0), clamp=False
+        )
+        count = 0
+        for i, frame in zip(range(1, len(frames)+1), frames):
             if self.need_to_init:
                 self.need_to_init = False
                 self.tensor_1 = frame
-                self.ndarray_1 = numpy_frame
                 if len(frames) > 1:
                     continue
                 else:
                     return []
             self.tensor_0, self.tensor_1 = self.tensor_1, frame
-            self.ndarray_0, self.ndarray_1 = self.ndarray_1, numpy_frame
-            I0 = self.tensor_0
-            I1 = self.tensor_1
+            I0 = self.tensor_0.tensor
+            I1 = self.tensor_1.tensor
             flowOut = self.flowComp(torch.cat((I0, I1), dim=1))
             F_0_1 = flowOut[:, :2, :, :]
             F_1_0 = flowOut[:, 2:, :, :]
             intermediate_frames = []
+            returning_tensor[count:count + 1] = self.tensor_0.tensor
+            count += 1
             for intermediateIndex in range(1, self.sf):
                 t = intermediateIndex / self.sf
                 temp = -t * (1 - t)
@@ -155,10 +133,12 @@ class RTer:
                 ) / (
                     wCoeff[0] * V_t_0 + wCoeff[1] * V_t_1
                 )
-
                 intermediate_frames.append(Ft_p[0])
-            intermediate_frames = self.tensor2ndarray(intermediate_frames)
-            return_.extend([self.ndarray_0, *intermediate_frames])
-            if kwargs['duplicate'] and i == len(frames):
-                return_.extend([numpy_frame]*self.sf)
-        return return_
+                returning_tensor[count:count + 1] = Ft_p.detach()
+                count += 1
+            if last and i == len(frames):
+                for _ in range(self.sf):
+                    returning_tensor[count:count + 1] = frame.tensor
+                    count += 1
+        returning_tensor = self.tensor2ndarray(returning_tensor)
+        return returning_tensor
