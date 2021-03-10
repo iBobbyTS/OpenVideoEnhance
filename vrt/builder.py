@@ -32,7 +32,7 @@ class Build:
         # Make sure building tools are there
         self.pip_install(['pip', 'setuptools', 'wheel'])
         # Packages that all algorithms will use
-        self.pip_install(['numpy', 'opencv-python', 'Pillow', 'torch', 'torchvision'])
+        self.pip_install(['numpy', 'opencv-python', 'Pillow'])#, 'torch', 'torchvision'])
         # Create folder for model
         if download_model:
             os.makedirs(self.opt['model_path'], exist_ok=True)
@@ -68,12 +68,13 @@ class Build:
         self.pip_install(['addict', 'future', 'lmdb', 'ninja', 'pyyaml', 'requests', 'scikit-image', 'scipy', 'tb-nightly', 'tqdm', 'yapf'])
         if opt['develop']:
             pass
+        os.makedirs('../third_party', exist_ok=True)
         os.chdir('../third_party')
         if os.path.exists('BasicSR') and opt['rebuild']:
             shutil.rmtree('BasicSR')
         os.system(f"git clone https://{'gitee' if opt['gitee'] else 'github'}.com/xinntao/BasicSR.git")
         os.chdir('BasicSR')
-        os.system(f"{self.python_executable} setup.py {opt['build_type']}{'' if cuda_extensions else ' --no_cuda_ext'}")
+        os.system(f"{self.python_executable} setup.py develop {'' if cuda_extensions else ' --no_cuda_ext'}")
         # Download models
         links = {
             'EDVR': [
@@ -175,8 +176,9 @@ class Build:
         if cc is None:
             import torch
             cc = ['%d%d' % torch.cuda.get_device_capability()]
+        self.pip_install('ninja')
         if opt['develop']:
-            self.pip_install(['bisect', 'ninja'])
+            self.pip_install('bisect')
         os.chdir('vfin/dain')
         # Write compiler args
         nvcc_args = []

@@ -11,6 +11,5 @@ if vrt_root not in [os.path.abspath(path) for path in sys.path]:
 from builder import Build
 builder = Build(download_model=False, build_type='develop', gitee=False)
 builder.BasicSR()
-
-# builder.SSM()
-# builder.DAIN(build_type='install', cc=(60, 70))
+builder.SSM()
+builder.DAIN(build_type='install', cc=(37, 60, 61, 70, 75))

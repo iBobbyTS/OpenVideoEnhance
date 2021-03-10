@@ -9,7 +9,7 @@ from vrt import utils
 
 
 class DataLoader:
-    def __init__(self, video_input, opt):
+    def __init__(self, video_input, opt, channel_order):
         """
         Parameters
         ----------
@@ -37,9 +37,10 @@ class DataLoader:
                 command.extend([
                     '-i', real_path,
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
-                    '-f', 'rawvideo', '-pix_fmt', 'bgr24',
+                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}24',
                     '-'
                 ])
+                print(' '.join(command))
                 self.pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=10 ** 8)
                 ffprobe_out = eval(subprocess.getoutput(
                     f"ffprobe -hide_banner -v quiet -select_streams v -show_entries "
@@ -84,7 +85,7 @@ class DataLoader:
                     '-pattern_type', 'glob',
                     '-i', f'{real_path}/*{os.path.splitext(self.files[0])[1]}',
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
-                    '-f', 'rawvideo', '-pix_fmt', 'bgr24',
+                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}24',
                     '-'
                 ])
                 self.pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=100000000)
@@ -102,6 +103,7 @@ class DataLoader:
             width, height, fps, fourcc, frame_count,
             numpy.ndarray, numpy.uint8
         ]
+        self.channel_order = channel_order if self.lib == 'ffmpeg' else 'bgr'
 
     def get(self, idx):
         """
@@ -172,7 +174,7 @@ class DataWriter:
         }
     }
 
-    def __init__(self, input_dir, output_path, opt, res, fps):
+    def __init__(self, input_dir, output_path, opt, res, fps, channel_order):
         """
         Parameters
         ----------
@@ -205,7 +207,8 @@ class DataWriter:
                 command = [
                     'ffmpeg',
                     # '-flush_packets', '1',
-                    '-f', 'rawvideo', '-pix_fmt', 'bgr24',
+                    '-f', 'rawvideo',
+                    '-pix_fmt', f'{channel_order}24',
                     '-s', '%dx%d' % res, '-r', str(fps),
                     '-i', '-',
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
@@ -217,6 +220,7 @@ class DataWriter:
                     *([] if (_ := [opt['ffmpeg-params'].split(' ')]) else _),
                     self.output_path
                 ]
+                print(' '.join(command))
                 self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
                 self.write_func = lambda frame: (self.pipe.stdin.write(frame.tobytes()), self.pipe.stdin.flush())
         elif self.type == 'img':
@@ -228,15 +232,20 @@ class DataWriter:
                 command = [
                     'ffmpeg',
                     # '-flush_packets', '1',
-                    '-f', 'rawvideo', '-pix_fmt', 'bgr24',
+                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}24',
                     '-s', '%dx%d' % res,
                     '-i', '-',
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
                     *([] if (_ := [opt['ffmpeg-params'].split(' ')]) else _),
                     f'{self.output_path}/%d.{self.ext}'
                 ]
-                self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.pipe = subprocess.Popen(
+                    command,
+                    stdin=subprocess.PIPE, stderr=subprocess.PIPE,
+                    close_fds=True
+                )
                 self.write_func = lambda frame: (self.pipe.stdin.write(frame.tobytes()), self.pipe.stdin.flush())
+        self.channel_order = channel_order if self.lib == 'ffmpeg' else 'bgr'
         self.thread = threading.Thread()
         self.thread.start()
 
@@ -266,7 +275,7 @@ class DataBuffer:
             tensor=numpy.empty(
                 (2, *map(self.video.get, (4, 3)), 3),
                 dtype=self.video.get(9)),
-            shape_order='fhwc', channel_order='bgr',
+            shape_order='fhwc', channel_order=self.video.channel_order,
             range_=(0, 255)
         )
         self.count = 0

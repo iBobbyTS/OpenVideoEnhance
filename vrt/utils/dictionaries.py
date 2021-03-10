@@ -35,3 +35,10 @@ model_configs = {
         'mt4r': [{}, 5, 4, 4, {16: 416}]
     }
 }
+
+model_channel_order = {
+    'ssm': 'rgb',
+    'dain': 'rgb',
+    'esrgan': 'rgb',
+    'edvr': 'rgb',
+}

@@ -3,7 +3,6 @@ from time import time
 everything_start_time = time()
 
 import os
-import copy as copylib
 
 from vrt import utils
 
@@ -62,7 +61,8 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
         utils.folder.check_dir_availability(temp_path)
         # Load video
         video = utils.data_processor.DataLoader(
-            video_input=solved_input, opt=preprocess_opt
+            video_input=solved_input, opt=preprocess_opt,
+            channel_order=utils.dictionaries.model_channel_order[model_opt['to_do'][0]]
         )
         # Initialize buffer
         buffer = utils.data_processor.DataBuffer(video)
@@ -97,8 +97,10 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
         # Initialize saver
         saver = utils.data_processor.DataWriter(
             input_dir=input_opt['path'], output_path=output_opt['path'],
-            opt=postprocess_opt, fps=fps, res=(width, height)
+            opt=postprocess_opt, fps=fps, res=(width, height),
+            channel_order=utils.dictionaries.model_channel_order[model_opt['to_do'][-1]]
         )
+        channel_order = utils.dictionaries.model_channel_order[model_opt['to_do'][-1]]
         # Start processing
         timer = utils.io.Timer(end - start)
         x = []
@@ -107,11 +109,13 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
             # Inference
             for model in restorers:
                 frames = model.rt(frames, last=(i+1 == end))
+                if frames:
+                    frames.detach()
             # Save
             x.append(len(frames))
             if frames:
-                for frame in copylib.copy(frames).convert(
-                    place='numpy', dtype='uint8', shape_order='fhwc', channel_order='bgr', range_=(0.0, 255.0)
+                for frame in frames.convert(
+                    place='numpy', dtype='uint8', shape_order='fhwc', channel_order=channel_order, range_=(0.0, 255.0)
                 ):
                     saver.write(frame)
             # Show progress

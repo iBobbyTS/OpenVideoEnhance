@@ -25,6 +25,13 @@ class Tensor:
         'numpy': 0 if torch.cuda.is_available() else 1,
         'torch': 1 if torch.cuda.is_available() else 0
     }
+    torch_dtype = {
+        'uint8': torch.uint8,
+        'int8': torch.int8,
+        'float64': torch.float64,
+        'float32': torch.float32,
+        'float16': torch.float16,
+    }
 
     def __init__(
             self,
@@ -60,6 +67,7 @@ class Tensor:
         self.dtype = str(self.tensor.dtype) if self.place == 'numpy' else str(self.tensor.dtype).split('.')[1]
         self.device = None if self.place == 'numpy' else str(self.tensor.device)
         self.min, self.max = range_
+        self.shape = self.size()
         if clamp:
             if self.tensor.max() > self.max or self.tensor.min() > self.min:
                 self.tensor = self.clamp(self.min, self.max)
@@ -102,7 +110,7 @@ class Tensor:
 
     def __setitem__(self, index, tensor):
         assert tensor.shape == self.tensor[index].shape
-        self.tensor[index] = tensor
+        self.tensor[index] = tensor.tensor if isinstance(tensor, Tensor) else tensor
 
     # Internal methods
     def clamp(self, min_, max_):
@@ -159,10 +167,10 @@ class Tensor:
             if dtype != self.dtype:
                 if self.tensor.max() > self.max or self.tensor.min() > self.min:
                     self.tensor = self.clamp(self.min, self.max)
-                if self.place == 'torch':
-                    self.tensor = self.tensor.type(self.dtype)
-                else:
+                if self.place == 'numpy':
                     self.tensor = self.tensor.astype(dtype)
+                elif self.place == 'torch':
+                    self.tensor = self.tensor.to(self.torch_dtype[dtype])
                 self.dtype = dtype
 
     def cvt_range(self, range_):
@@ -214,7 +222,24 @@ class Tensor:
         # Exec
         for func, arg in executions:
             func(arg)
+        self.shape = self.size()
         return self.tensor
+
+    def detach(self):
+        if self.place == 'numpy':
+            self.tensor = self.tensor.copy()
+        elif self.place == 'torch':
+            self.tensor = self.tensor.detach()
+
+    def size(self):
+        return tuple(self.tensor.shape)
+
+    def update(self, tensor):
+        self.tensor = tensor
+        self.place = type(self.tensor).__module__
+        self.dtype = str(self.tensor.dtype) if self.place == 'numpy' else str(self.tensor.dtype).split('.')[1]
+        self.device = None if self.place == 'numpy' else str(self.tensor.device)
+        self.shape = self.size()
 
     def unsqueeze(self, index=0, name='b'):
         if self.place == 'numpy':
@@ -223,12 +248,8 @@ class Tensor:
             self.tensor = self.tensor.unsqueeze(index)
         self.shape_order_str = f"{self.shape_order_str[:index]}{name}{self.shape_order_str[index:]}"
         self.shape_order = self.shape_order_str2dict(self.shape_order_str)
+        self.shape = self.size()
 
-    def detach(self):
-        if self.place == 'numpy':
-            self.tensor = self.tensor.copy()
-        elif self.place == 'torch':
-            self.tensor = self.tensor.detach()
 
 
 def stack(tensors: list):

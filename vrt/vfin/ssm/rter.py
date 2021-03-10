@@ -53,8 +53,8 @@ class RTer:
         }
 
     def ndarray2tensor(self, frame):
-        if isinstance(frame, (list, tuple)):
-            frame = utils.tensor.stack(frame)
+        # if isinstance(frame, (list, tuple)):
+        #     frame = utils.tensor.stack(frame)
         frame.convert(
             place='torch', dtype='float32',
             shape_order='fchw', channel_order='rgb', range_=(0.0, 1.0)
@@ -72,10 +72,9 @@ class RTer:
         return tensor
 
     def rt(self, frames: utils.tensor.Tensor, last, *args, **kwargs):
-        if frames:
-            frames = self.ndarray2tensor(frames)
-        else:
+        if not frames:
             return frames
+        frames = self.ndarray2tensor(frames)
         returning_tensor = utils.tensor.Tensor(
             tensor=torch.empty(
                 (len(frames) * self.sf - (1 if self.need_to_init else 0) * self.sf + (self.sf if last else 0), 3, *self.dim),
@@ -86,7 +85,7 @@ class RTer:
             range_=(0.0, 1.0), clamp=False
         )
         count = 0
-        for i, frame in zip(range(1, len(frames)+1), frames):
+        for i, frame in enumerate(frames, 1):
             if self.need_to_init:
                 self.need_to_init = False
                 self.tensor_1 = frame

@@ -141,12 +141,13 @@ class DAIN_slowmotion(torch.nn.Module):
             else:
                 temp = self.depthNet(torch.cat((cur_filter_input[:, :3, ...], cur_filter_input[:, 3:, ...]), dim=0))
 
-            log_depth = [temp[:cur_filter_input.size(0)], temp[cur_filter_input.size(0):]]
 
             if self.useAnimationMethod == 1:
                 log_depth = [(d * 0) for d in log_depth]
-            if self.useAnimationMethod == 2:
+            elif self.useAnimationMethod == 2:
                 log_depth = [d for d in log_depth]
+            else:
+                log_depth = [temp[:cur_filter_input.size(0)], temp[cur_filter_input.size(0):]]
 
             cur_ctx_output = [
                 torch.cat((self.ctxNet(cur_filter_input[:, :3, ...]),
@@ -158,7 +159,6 @@ class DAIN_slowmotion(torch.nn.Module):
             cur_filter_output = [self.forward_singlePath(self.initScaleNets_filter1, temp, name=None),
                                  self.forward_singlePath(self.initScaleNets_filter2, temp, name=None)]
 
-            # depth_inv = [1e-6 + 1 / torch.exp(d) for d in log_depth]
             if self.useAnimationMethod == 1:
                 depth_inv = [(d * 0) + 1e-6 + 10000 for d in log_depth]
             else:
@@ -194,7 +194,7 @@ class DAIN_slowmotion(torch.nn.Module):
 
             cur_output_temp = cur_output_temp[:, :, self.padding[2]: self.padding[3], self.padding[0]: self.padding[1]]
 
-            cur_output.append(cur_output_temp[0])
+            cur_output.append(cur_output_temp)
 
             if self.rectify:
                 ref0 = ref0[:, :, self.padding[2]:self.padding[3], self.padding[0]: self.padding[1]]

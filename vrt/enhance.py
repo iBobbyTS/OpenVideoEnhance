@@ -11,7 +11,7 @@ from enhancer import enhance
 
 # Args
 input_opt = {
-    'path': '/Users/ibobby/Dataset/frame_test.mov'
+    'path': '/content/frame_test.mov'
 }
 temp_opt = {
     'path': '../tmp',
@@ -26,21 +26,21 @@ preprocess_opt = {
 }
 model_opt = {
     'empty_cache': True,
-    'default_model_dir': '/Users/ibobby/PycharmProjects/OpenVideoEnhance_old/vrt/model_weights',
-    'to_do': ['esrgan', 'ssm', 'esrgan'],
+    'default_model_dir': '/content/model_weights',
+    'to_do': ['edvr', 'dain', 'esrgan', 'ssm'],
     'model_path': [None]*7,
     'args': [[]]*7,
-    'kwargs': [{'mode': 'nearest'}, {'sf': 3}, {}, {'sf': 4}, {}, {}, {}, {}]
+    'kwargs': [{'model_name': 'ldc'}, {'sf': 3}, {'mode': 'nearest'}, {'sf': 4}, {}, {}, {}, {}]
 }
 postprocess_opt = {
     # Share
-    'type': 'img',
+    'type': 'vid',
     'lib': 'ffmpeg',
     # Video
     # CV2
     'fourcc': 'hvc1',
     # FFmpeg
-    'encoder': 'libx265',
+    'encoder': 'libx264',
     'pix_fmt': 'yuv420p',
     'resize': None,
     'in_fps': None,
@@ -55,7 +55,7 @@ postprocess_opt = {
     'dtype': 'uint8'
 }
 output_opt = {
-    'path': '/Users/ibobby/Dataset/out/o'
+    'path': '/content/out/o'
 }
 
 enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt)
