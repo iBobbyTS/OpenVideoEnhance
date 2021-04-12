@@ -11,7 +11,7 @@ from enhancer import enhance
 
 # Args
 input_opt = {
-    'path': '/content/frame_test.mov'
+    'path': '/Users/ibobby/Dataset/resolution_test/120p.mp4'
 }
 temp_opt = {
     'path': '../tmp',
@@ -26,15 +26,15 @@ preprocess_opt = {
 }
 model_opt = {
     'empty_cache': True,
-    'default_model_dir': '/content/model_weights',
-    'to_do': ['edvr', 'dain', 'esrgan', 'ssm'],
-    'model_path': [None]*7,
-    'args': [[]]*7,
-    'kwargs': [{'model_name': 'ldc'}, {'sf': 3}, {'mode': 'nearest'}, {'sf': 4}, {}, {}, {}, {}]
+    'default_model_dir': '/Users/ibobby/Dataset/model_weights',
+    'to_do': ['esrgan'],
+    'model_path': [None],
+    'args': [[]],
+    'kwargs': [{'render_factor': 20}]
 }
 postprocess_opt = {
     # Share
-    'type': 'vid',
+    'type': 'img',
     'lib': 'ffmpeg',
     # Video
     # CV2
@@ -47,7 +47,7 @@ postprocess_opt = {
     # Set out_fps if you want the final fps to be 60 in order not to waste space.
     # Keep it None unless you know the difference of -r option in FFmpeg for input and output streams.
     'out_fps': None,
-    'crf': 18,
+    'crf': 28,
     'ffmpeg-params': '',
     # Image & Internal Data Format
     'ext': 'jpg',  # If img
@@ -55,7 +55,13 @@ postprocess_opt = {
     'dtype': 'uint8'
 }
 output_opt = {
-    'path': '/content/out/o'
+    'path': '/Users/ibobby/Dataset/out/o'
 }
 
-enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, output_opt)
+if __name__ == '__main__':
+    enhance(
+        input_opt,
+        temp_opt,
+        preprocess_opt, model_opt, postprocess_opt,
+        output_opt
+    )

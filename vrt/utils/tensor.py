@@ -1,5 +1,6 @@
 import numpy
 import torch
+import copy
 
 name2module_dict = {'numpy': numpy, 'torch': torch}
 
@@ -15,8 +16,10 @@ class Tensor:
         'float64': 1,
     }
     dtype_speed = {
-        'uint8': 4,
-        'int8': 4,
+        'uint8': 5,
+        'int8': 5,
+        'uint16': 4,
+        'int16': 4,
         'float16': 3,
         'float32': 2,
         'float64': 1
@@ -176,6 +179,7 @@ class Tensor:
     def cvt_range(self, range_):
         if range_ is not None:
             if ((min_ := range_[0]), (max_ := range_[1])) != (self.min, self.max):
+                self.tensor -= self.min
                 self.tensor /= self.max - self.min
                 self.tensor *= max_ - min_
                 self.tensor += min_
@@ -225,10 +229,11 @@ class Tensor:
         self.shape = self.size()
         return self.tensor
 
+    def copy(self):
+        return copy.deepcopy(self)
+
     def detach(self):
-        if self.place == 'numpy':
-            self.tensor = self.tensor.copy()
-        elif self.place == 'torch':
+        if self.place == 'torch':
             self.tensor = self.tensor.detach()
 
     def size(self):

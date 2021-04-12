@@ -251,6 +251,7 @@ class DataWriter:
 
     def write(self, obj):
         self.thread.join()
+        del self.thread
         self.count += 1
         self.thread = threading.Thread(target=self.write_func, args=(obj,))
         self.thread.start()
@@ -286,6 +287,7 @@ class DataBuffer:
 
     def get_frame(self, last):
         self.thread.join()
+        del self.thread
         if last:
             i = 1 if self.count else 0
             return self.buff[i: i+1]

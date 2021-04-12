@@ -1,7 +1,5 @@
 from time import time
-
 everything_start_time = time()
-
 import os
 
 from vrt import utils
@@ -57,7 +55,9 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
     inputs = utils.io.solve_input(input_opt['path'])
     for solved_input in inputs:
         # Create temporary folder
-        temp_path = os.path.join((temp_opt['path']), solved_input[1][1])
+        temp_path = os.path.abspath(os.path.join(
+            (temp_opt['path']), solved_input[1][1]
+        ))
         utils.folder.check_dir_availability(temp_path)
         # Load video
         video = utils.data_processor.DataLoader(
@@ -84,6 +84,7 @@ def enhance(input_opt, temp_opt, preprocess_opt, model_opt, postprocess_opt, out
             rter = utils.algorithm.get(to_do)(
                 height=height, width=width,
                 model_path=model_path, default_model_dir=model_opt['default_model_dir'],
+                temp_path=temp_path,
                 *args, **kwargs
             )
             output_effect = rter.get_output_effect()
