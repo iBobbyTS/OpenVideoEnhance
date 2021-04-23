@@ -1,0 +1,14 @@
+numpy
+requests
+tqdm
+opencv-python
+scikit-image
+zlib
+dominate
+pillow
+dlib
+typing
+fastai
+setuptools
+torch
+torchvision

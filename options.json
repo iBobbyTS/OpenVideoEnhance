@@ -1,0 +1,43 @@
+{
+  "global_opt": {
+    "ffmpeg_bin_path": "/usr/local/bin"
+  },
+  "input_opt": {
+    "path": "/Users/ibobby/Dataset/resolution_test/4k.mp4"
+  },
+  "temp_opt": {
+    "path": "../tmp",
+    "remove": false
+  },
+  "preprocess_opt": {
+    "lib": "ffmpeg",
+    "frame_range": [5, 15],
+    "resize": [64, 48],
+    "": "Only for FFmpeg",
+    "decoder": null
+  },
+  "model_opt": {
+    "empty_cache": true,
+    "default_model_dir": "/Users/ibobby/Dataset/model_weights",
+    "to_do": ["ssm"],
+    "model_path": [null, null, null],
+    "kwargs": [{"mode": "nearest"}, {"mode": "bicubic"}, {}]
+  },
+  "postprocess_opt": {
+    "type": "img",
+    "lib": "cv2",
+    "fourcc": "hvc1",
+    "encoder": "libx265",
+    "pix_fmt": "yuv420p",
+    "resize": null,
+    "in_fps": null,
+    "out_fps": null,
+    "crf": 28,
+    "ffmpeg-params": "",
+    "ext": "jpg",
+    "dtype": "uint8"
+  },
+  "output_opt": {
+    "path": "/Users/ibobby/Dataset/out/o"
+  }
+}
