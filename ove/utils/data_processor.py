@@ -179,8 +179,10 @@ class DataWriter:
                 'h264': 'mp4',
                 'libx264': 'mp4',
                 'libx264rgb': 'mp4',
+                'h264_nvenc': 'mp4',
                 'hevc': 'mov',
                 'libx265': 'mov',
+                'hevc_nvenc': 'mov',
             }
         }
     }

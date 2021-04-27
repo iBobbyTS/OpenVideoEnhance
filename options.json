@@ -3,7 +3,7 @@
     "ffmpeg_bin_path": "/usr/local/bin"
   },
   "input_opt": {
-    "path": "/Users/ibobby/Dataset/resolution_test/4k.mp4"
+    "path": "/Users/ibobby/Dataset/frame_test/vid.mov"
   },
   "temp_opt": {
     "path": "../tmp",

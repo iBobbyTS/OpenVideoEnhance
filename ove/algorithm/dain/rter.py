@@ -17,7 +17,8 @@ class RTer:
         self.sf = sf
         self.resize_hotfix = resize_hotfix
         self.network = net_name
-        self.dim = (height, width)
+        self.width = width
+        self.height = height
         # Initialize pader
         self.pader = utils.modeling.Pader(
             width, height, 128, extend_func='replication'
@@ -28,8 +29,8 @@ class RTer:
         )
         # Initialize model
         self.model = models.__dict__[self.network](
+            size=(width, height),
             padding=self.pader.slice,
-            channel=3, filter_size=4,
             timestep=1/self.sf,
             rectify=rectify,
             useAnimationMethod=animation,
@@ -71,7 +72,8 @@ class RTer:
         frames = self.encode(frames)
         returning_tensor = utils.tensor.Tensor(
             tensor=torch.empty(
-                (len(frames) * self.sf - (1 if self.need_to_init else 0) * self.sf + (self.sf if last else 0), 3, *self.dim),
+                (len(frames) * self.sf - (1 if self.need_to_init else 0) * self.sf + (self.sf if last else 0),
+                 3, self.height, self.width),
                 dtype=torch.float32,
                 device=self.device
             ),

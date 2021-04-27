@@ -6,14 +6,12 @@ import torch
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 
-root = '/'.join(os.path.abspath(__file__).split('/')[:-2])
+root = '/'.join(os.path.abspath(__file__).split('/')[:-1])
 if os.getcwd() != root:
     os.chdir(root)
 
-
-def version():
-    with open('version.txt', 'r') as f:
-        return f.read()
+with open('version.txt', 'r') as f:
+    version = f.read()
 
 
 def make_extension(
@@ -41,9 +39,10 @@ if torch.cuda.is_available():
         del sys.argv[2:]
     else:
         cc = ['%d%d' % torch.cuda.get_device_capability()]
+    print(f"Building for CUDA Compatibility {','.join(cc)}")
 else:
-    print('No available CUDA device. ')
-# exit(1)
+    print('No available CUDA device.')
+    exit(1)
 
 dain_extra_compile_args = {
     'cxx': ['-std=c++17', '-w'],
@@ -79,7 +78,7 @@ ext_modules = [
 
 setup(
     name='ove_ext',
-    version=version(),
+    version=version,
     packages=['ove_ext'],
     ext_modules=ext_modules,
     cmdclass={'build_ext': BuildExtension},

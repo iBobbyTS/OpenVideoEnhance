@@ -6,8 +6,10 @@ import threading
 import torch
 from torch import nn
 from torch.nn import init
-from torch.nn import functional as F
+import torch.nn.functional as F
 from torch.nn.modules.batchnorm import _BatchNorm
+
+from ove.utils.modeling import Sequential
 
 try:
     from torch.nn.parallel._functions import ReduceAddCoalesced, Broadcast
@@ -256,7 +258,7 @@ class SPADE(nn.Module):
 
         pw = ks // 2
 
-        self.mlp_shared = nn.Sequential(nn.Conv2d(3, nhidden, kernel_size=ks, padding=pw), nn.ReLU())
+        self.mlp_shared = Sequential(nn.Conv2d(3, nhidden, kernel_size=ks, padding=pw), nn.ReLU())
 
         self.mlp_gamma = nn.Conv2d(nhidden, norm_nc, kernel_size=ks, padding=pw)
         self.mlp_beta = nn.Conv2d(nhidden, norm_nc, kernel_size=ks, padding=pw)

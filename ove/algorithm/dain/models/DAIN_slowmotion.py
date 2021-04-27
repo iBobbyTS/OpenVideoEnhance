@@ -6,38 +6,34 @@ from ..networks import (
     S2DF_3dense,
     MultipleBasicBlock_4,
     HourGlass,
+    pwc_dc_net,
     DepthFlowProjectionModule,
     FilterInterpolationModule,
-    FlowProjectionModule,
-    pwc_dc_net
+    FlowProjectionModule
 )
 from ..utils import Stack
+from ove.utils.modeling import Sequential
 
 
 class DAIN_slowmotion(torch.nn.Module):
     def __init__(
         self,
+        size,
         padding,
-        channel=3,
-        filter_size=4,
         timestep=0.5,
         useAnimationMethod=0,
         rectify=False
     ):
         super().__init__()
-        self.filter_size = filter_size
         self.useAnimationMethod = useAnimationMethod
         self.rectify = rectify
         self.padding = padding
         self.time_offsets = [kk * timestep for kk in range(1, int(1.0 / timestep))]
-        self.initScaleNets_filter, self.initScaleNets_filter1, self.initScaleNets_filter2 = self.get_MonoNet5(
-            channel, filter_size * filter_size, "filter"
-        )
+        self.initScaleNets_filter, self.initScaleNets_filter1, self.initScaleNets_filter2 = self.get_MonoNet5(3, 16)
         self.ctxNet = S2DF_3dense()
-        self.rectifyNet = MultipleBasicBlock_4(473, 128) if rectify else lambda: None
+        self.rectifyNet = MultipleBasicBlock_4() if rectify else lambda: None
         self._initialize_weights()
-        self.flownets = pwc_dc_net()
-        self.div_flow = 20.0
+        self.flownets = pwc_dc_net(size)
         self.depthNet = HourGlass()
         self.filterModule = FilterInterpolationModule().cuda()
 
@@ -108,8 +104,8 @@ class DAIN_slowmotion(torch.nn.Module):
 
         with torch.cuda.stream(s2):
             cur_offset_outputs = [
-                self.forward_flownets(self.flownets, cur_input_0, cur_input_2, self.time_offsets),
-                self.forward_flownets(self.flownets, cur_input_2, cur_input_0, self.time_offsets[::-1])
+                self.forward_flownets(self.flownets, cur_input_0, cur_input_2),
+                self.forward_flownets(self.flownets, cur_input_2, cur_input_0)
             ]
         torch.cuda.synchronize()
         cur_offset_outputs = [
@@ -123,8 +119,7 @@ class DAIN_slowmotion(torch.nn.Module):
                 cur_ctx_output[0],
                 cur_ctx_output[1],
                 cur_offset_output,
-                cur_filter_output,
-                timeoffset
+                cur_filter_output
             )
             cur_output_temp, ref0, ref2 = self.FilterInterpolate(
                 self.filterModule,
@@ -159,7 +154,7 @@ class DAIN_slowmotion(torch.nn.Module):
 
     def forward_flownets(self, model, im1, im2):
         temp = model(im1, im2)
-        temps = [self.div_flow * temp * time_offset for time_offset in self.time_offsets]
+        temps = [20 * temp * time_offset for time_offset in self.time_offsets]
         temps = [F.interpolate(temp, scale_factor=4, mode='bilinear', align_corners=True) for temp in temps]
         return temps
 
@@ -184,7 +179,7 @@ class DAIN_slowmotion(torch.nn.Module):
 
     def get_MonoNet5(self, channel_in, channel_out):
         return (
-            nn.Sequential(
+            Sequential(
                 self.conv_relu(channel_in * 2, 16, (3, 3), (1, 1)),
                 self.conv_relu_maxpool(16, 32, (3, 3), (1, 1), (2, 2)),
                 self.conv_relu_maxpool(32, 64, (3, 3), (1, 1), (2, 2)),
@@ -226,17 +221,17 @@ class DAIN_slowmotion(torch.nn.Module):
     def conv_relu_conv(
         input_filter, output_filter, kernel_size, padding
     ):
-        return nn.Sequential(
-            nn.Conv2d(input_filter, input_filter, kernel_size, 1, padding),
+        return Sequential(
+            nn.Conv2d(input_filter, input_filter, kernel_size, (1, 1), padding),
             nn.ReLU(inplace=True),
-            nn.Conv2d(input_filter, output_filter, kernel_size, 1, padding),
+            nn.Conv2d(input_filter, output_filter, kernel_size, (1, 1), padding),
         )
 
     @staticmethod
     def conv_relu(
         input_filter, output_filter, kernel_size, padding
     ):
-        return nn.Sequential(
+        return Sequential(
             nn.Conv2d(input_filter, output_filter, kernel_size, 1, padding),
             nn.ReLU(inplace=True)
         )
@@ -246,7 +241,7 @@ class DAIN_slowmotion(torch.nn.Module):
         input_filter, output_filter, kernel_size,
         padding, kernel_size_pooling
     ):
-        return nn.Sequential(
+        return Sequential(
             nn.Conv2d(input_filter, output_filter, kernel_size, 1, padding),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size_pooling)
@@ -257,7 +252,7 @@ class DAIN_slowmotion(torch.nn.Module):
         input_filter, output_filter, kernel_size,
         padding, unpooling_factor
     ):
-        return nn.Sequential(
+        return Sequential(
             nn.Upsample(scale_factor=unpooling_factor, mode='bilinear', align_corners=True),
             nn.Conv2d(input_filter, output_filter, kernel_size, stride=(1,), padding=padding),
             nn.ReLU(inplace=True)

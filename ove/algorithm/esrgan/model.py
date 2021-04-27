@@ -2,29 +2,30 @@ import torch
 from torch import nn as nn
 
 from ove.utils.arch import default_init_weights, make_layer
+from ove.utils.modeling import Sequential
 
 
 class ResidualDenseBlock(nn.Module):
     def __init__(self, num_feat=64, num_grow_ch=32):
         super().__init__()
-        lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(num_feat, num_grow_ch, 3, 1, 1),
-            lrelu
+        relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        self.conv1 = Sequential(
+            nn.Conv2d(num_feat, num_grow_ch, (3, 3), (1, 1), (1, 1)),
+            relu
         )
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(num_feat + num_grow_ch, num_grow_ch, 3, 1, 1),
-            lrelu
+        self.conv2 = Sequential(
+            nn.Conv2d(num_feat + num_grow_ch, num_grow_ch, (3, 3), (1, 1), (1, 1)),
+            relu
         )
-        self.conv3 = nn.Sequential(
-            nn.Conv2d(num_feat + 2 * num_grow_ch, num_grow_ch, 3, 1, 1),
-            lrelu
+        self.conv3 = Sequential(
+            nn.Conv2d(num_feat + 2 * num_grow_ch, num_grow_ch, (3, 3), (1, 1), (1, 1)),
+            relu
         )
-        self.conv4 = nn.Sequential(
-            nn.Conv2d(num_feat + 3 * num_grow_ch, num_grow_ch, 3, 1, 1),
-            lrelu
+        self.conv4 = Sequential(
+            nn.Conv2d(num_feat + 3 * num_grow_ch, num_grow_ch, (3, 3), (1, 1), (1, 1)),
+            relu
         )
-        self.conv5 = nn.Conv2d(num_feat + 4 * num_grow_ch, num_feat, 3, 1, 1)
+        self.conv5 = nn.Conv2d(num_feat + 4 * num_grow_ch, num_feat, (3, 3), (1, 1), (1, 1))
         # Initialization
         default_init_weights(
             [self.conv1, self.conv2, self.conv3, self.conv4, self.conv5],
@@ -46,7 +47,7 @@ class RRDB(nn.Module):
         num_feat, num_grow_ch=32
     ):
         super().__init__()
-        self.block = nn.Sequential(
+        self.block = Sequential(
             ResidualDenseBlock(num_feat, num_grow_ch),
             ResidualDenseBlock(num_feat, num_grow_ch),
             ResidualDenseBlock(num_feat, num_grow_ch)
@@ -64,25 +65,25 @@ class RRDBNet(nn.Module):
         interpolate_opt=None
     ):
         super().__init__()
-        lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         # Networks
-        self.block1 = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
-        self.block2 = nn.Sequential(
+        self.block1 = nn.Conv2d(num_in_ch, num_feat, (3, 3), (1, 1), (1, 1))
+        self.block2 = Sequential(
             *make_layer(
                 RRDB, num_block, num_feat=num_feat, num_grow_ch=num_grow_ch
             ),
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+            nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1))
         )
-        self.block3 = nn.Sequential(
+        self.block3 = Sequential(
             nn.Upsample(scale_factor=2, **interpolate_opt),
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            lrelu,
+            nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1)),
+            relu,
             nn.Upsample(scale_factor=2, **interpolate_opt),
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            lrelu,
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            lrelu,
-            nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+            nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1)),
+            relu,
+            nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1)),
+            relu,
+            nn.Conv2d(num_feat, num_out_ch, (3, 3), (1, 1), (1, 1))
         )
 
     def forward(self, x, target, count):

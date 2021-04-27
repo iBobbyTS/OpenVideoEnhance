@@ -2,13 +2,12 @@ numpy
 requests
 tqdm
 opencv-python
+numba
 scikit-image
-zlib
-dominate
 pillow
 dlib
 typing
-fastai
+fastai==1.0.61
 setuptools
 torch
 torchvision

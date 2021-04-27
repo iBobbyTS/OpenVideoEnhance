@@ -1,17 +1,22 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ove.utils.modeling import Sequential
 
-class down(nn.Module):
+
+class Down(nn.Module):
     def __init__(self, inChannels, outChannels, filterSize):
         super().__init__()
-        self.block = nn.Sequential(
+        filterSize -= 1
+        filterSize /= 2
+        padding = int(filterSize)
+        padding = (padding, padding)
+        self.block = Sequential(
             torch.nn.AvgPool2d(2),
-            nn.Conv2d(inChannels, outChannels, filterSize, stride=1, padding=int((filterSize - 1) / 2)),
+            nn.Conv2d(inChannels, outChannels, filterSize, stride=(1, 1), padding=padding),
             nn.LeakyReLU(negative_slope=0.1),
-            nn.Conv2d(outChannels, outChannels, filterSize, stride=1, padding=int((filterSize - 1) / 2)),
+            nn.Conv2d(outChannels, outChannels, filterSize, stride=(1, 1), padding=padding),
             nn.LeakyReLU(negative_slope=0.1)
         )
 
@@ -19,16 +24,16 @@ class down(nn.Module):
         return self.block(x)
 
 
-class up(nn.Module):
+class Up(nn.Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()
-        self.block1 = nn.Sequential(
+        self.block1 = Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
-            nn.Conv2d(inChannels, outChannels, 3, stride=1, padding=1),
+            nn.Conv2d(inChannels, outChannels, (3, 3), stride=(1, 1), padding=(1, 1)),
             nn.LeakyReLU(negative_slope=0.1)
         )
-        self.block2 = nn.Sequential(
-            nn.Conv2d(2 * outChannels, outChannels, 3, stride=1, padding=1),
+        self.block2 = Sequential(
+            nn.Conv2d(2 * outChannels, outChannels, (3, 3), stride=(1, 1), padding=(1, 1)),
             nn.LeakyReLU(negative_slope=0.1)
         )
 
@@ -42,25 +47,24 @@ class up(nn.Module):
 class UNet(nn.Module):
     def __init__(self, inChannels, outChannels):
         super().__init__()
-        # Initialize neural network blocks.
-        self.block1 = nn.Sequential(
-            nn.Conv2d(inChannels, 32, 7, stride=1, padding=3),
+        self.block1 = Sequential(
+            nn.Conv2d(inChannels, 32, (7, 7), stride=(1, 1), padding=(3, 3)),
             nn.LeakyReLU(negative_slope=0.1),
-            nn.Conv2d(32, 32, 7, stride=1, padding=3),
+            nn.Conv2d(32, 32, (7, 7), stride=(1, 1), padding=(3, 3)),
             nn.LeakyReLU(negative_slope=0.1)
         )
-        self.down1 = down(32, 64, 5)
-        self.down2 = down(64, 128, 3)
-        self.down3 = down(128, 256, 3)
-        self.down4 = down(256, 512, 3)
-        self.down5 = down(512, 512, 3)
-        self.up1 = up(512, 512)
-        self.up2 = up(512, 256)
-        self.up3 = up(256, 128)
-        self.up4 = up(128, 64)
-        self.up5 = up(64, 32)
-        self.block2 = nn.Sequential(
-            nn.Conv2d(32, outChannels, 3, stride=1, padding=1),
+        self.down1 = Down(32, 64, 5)
+        self.down2 = Down(64, 128, 3)
+        self.down3 = Down(128, 256, 3)
+        self.down4 = Down(256, 512, 3)
+        self.down5 = Down(512, 512, 3)
+        self.up1 = Up(512, 512)
+        self.up2 = Up(512, 256)
+        self.up3 = Up(256, 128)
+        self.up4 = Up(128, 64)
+        self.up5 = Up(64, 32)
+        self.block2 = Sequential(
+            nn.Conv2d(32, outChannels, (3, 3), stride=(1, 1), padding=(1, 1)),
             nn.LeakyReLU(negative_slope=0.1)
         )
 
@@ -80,26 +84,31 @@ class UNet(nn.Module):
         return x
 
 
-class backWarp(nn.Module):
+class BackWarp(nn.Module):
     def __init__(self, W, H, device):
         super().__init__()
         self.W = W
         self.H = H
         self.gridY, self.gridX = torch.meshgrid(
-            torch.arange(H, requires_grad=False, device=device),
-            torch.arange(W, requires_grad=False, device=device)
+            torch.arange(H, requires_grad=False, device=device, dtype=torch.float32),
+            torch.arange(W, requires_grad=False, device=device, dtype=torch.float32)
         )
+        self.gridY = self.gridY.unsqueeze(0)
+        self.gridX = self.gridX.unsqueeze(0)
 
     def forward(self, img, flow):
-        u = flow[:, 0, :, :]
-        v = flow[:, 1, :, :]
-        x = self.gridX.unsqueeze(0).expand_as(u).float() + u
-        y = self.gridY.unsqueeze(0).expand_as(v).float() + v
-        x = 2 * (x / self.W - 0.5)
-        y = 2 * (y / self.H - 0.5)
-        grid = torch.stack((x, y), dim=3)
-        imgOut = torch.nn.functional.grid_sample(
-            img, grid, align_corners=True
+        f = flow.clone()
+        f[:, 0] += self.gridX
+        f[:, 0] *= 2
+        f[:, 0] /= self.W
+        f[:, 0] -= 1
+        f[:, 1] += self.gridY
+        f[:, 1] *= 2
+        f[:, 1] /= self.H
+        f[:, 1] -= 1
+        f = f.permute(0, 2, 3, 1)
+        imgOut = F.grid_sample(
+            img, f, mode='bilinear', align_corners=True
         )
         return imgOut
 
@@ -110,7 +119,7 @@ class SSM(nn.Module):
         self.sf = sf
         self.flowComp = UNet(6, 4)
         self.ArbTimeFlowIntrp = UNet(20, 5)
-        self.flowBackWarp = backWarp(width, height, device)
+        self.flowBackWarp = BackWarp(width, height, device)
 
     def forward(self, I0, I1, target, count):
         flowOut = self.flowComp(torch.cat((I0, I1), dim=1))
@@ -120,26 +129,25 @@ class SSM(nn.Module):
         count += 1
         for intermediateIndex in range(1, self.sf):
             t = intermediateIndex / self.sf
-            temp = -t * (1 - t)
-            fCoeff = [temp, t * t, (1 - t) * (1 - t), temp]
-            F_t_0 = fCoeff[0] * F_0_1 + fCoeff[1] * F_1_0
-            F_t_1 = fCoeff[2] * F_0_1 + fCoeff[3] * F_1_0
+            t_inv = 1.0 - t
+            temp = -t * t_inv
+            F_t_0 = temp * F_0_1 + t * t * F_1_0
+            F_t_1 = t_inv * t_inv * F_0_1 + temp * F_1_0
             g_I0_F_t_0 = self.flowBackWarp(I0, F_t_0)
             g_I1_F_t_1 = self.flowBackWarp(I1, F_t_1)
             intrpOut = self.ArbTimeFlowIntrp(torch.cat((
                 I0, I1, F_0_1, F_1_0, F_t_1, F_t_0, g_I1_F_t_1, g_I0_F_t_0
             ), dim=1))
-            F_t_0_f = intrpOut[:, :2, :, :] + F_t_0
-            F_t_1_f = intrpOut[:, 2:4, :, :] + F_t_1
+            F_t_0 += intrpOut[:, 0:2, :, :]
+            F_t_1 += intrpOut[:, 2:4, :, :]
             V_t_0 = torch.sigmoid(intrpOut[:, 4:5, :, :])
             V_t_1 = 1 - V_t_0
-            g_I0_F_t_0_f = self.flowBackWarp(I0, F_t_0_f)
-            g_I1_F_t_1_f = self.flowBackWarp(I1, F_t_1_f)
-            wCoeff = [1 - t, t]
+            g_I0_F_t_0_f = self.flowBackWarp(I0, F_t_0)
+            g_I1_F_t_1_f = self.flowBackWarp(I1, F_t_1)
             Ft_p = (
-                wCoeff[0] * V_t_0 * g_I0_F_t_0_f + wCoeff[1] * V_t_1 * g_I1_F_t_1_f
+                t_inv * V_t_0 * g_I0_F_t_0_f + t * V_t_1 * g_I1_F_t_1_f
             ) / (
-                wCoeff[0] * V_t_0 + wCoeff[1] * V_t_1
+                t_inv * V_t_0 + t * V_t_1
             )
             target[[count]] = Ft_p.detach()
             count += 1

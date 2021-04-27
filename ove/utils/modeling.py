@@ -5,12 +5,13 @@ import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from ove.utils.io import empty_cache
 
 
 def resize_hotfix(img):
     h, w = img.shape[2:4]
-    img = torch.nn.functional.interpolate(
+    img = F.interpolate(
         img,
         size=(h + 2, w + 2),
         mode='bilinear', align_corners=True
@@ -60,7 +61,7 @@ class Pader:
     def __init__(
             self,
             width, height, factor, aline_to_edge=False, extend_func='replication',
-            *args, **kwargs
+            *args
     ):
         left, right, top, bottom = calculate_expansion(width, height, factor, aline_to_edge)
         self.padding_result = (left, right, top, bottom)
@@ -101,9 +102,11 @@ def set_cudnn(model_opt):
 class Sequential(nn.Sequential):
     empty_cache = True
 
-    def forward(self, input):
+    def forward(self, x):
+        if self.empty_cache:
+            empty_cache()
         for module in self:
-            input = module(input)
+            x = module(x)
             if self.empty_cache:
                 empty_cache()
-        return input
+        return x

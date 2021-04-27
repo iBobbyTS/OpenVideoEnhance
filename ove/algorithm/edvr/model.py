@@ -2,7 +2,39 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from ove.utils.arch import make_layer, DCNv2Pack, ResidualBlockNoBN
+from ove_ext.basicsr.dcn import ModulatedDeformConvPack, modulated_deform_conv
+from ove.utils.arch import default_init_weights, make_layer
+from ove.utils.modeling import Sequential
+
+
+class ResidualBlockNoBN(nn.Module):
+    def __init__(self, num_feat=64, res_scale=1, pytorch_init=False):
+        super().__init__()
+        self.res_scale = res_scale
+        self.conv = Sequential(
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True)
+        )
+        if not pytorch_init:
+            default_init_weights([self.conv], 0.1)
+
+    def forward(self, x):
+        return x + self.conv(x) * self.res_scale
+
+
+class DCNv2Pack(ModulatedDeformConvPack):
+    def forward(self, x, feat):
+        out = self.conv_offset(feat)
+        o1, o2, mask = torch.chunk(out, 3, dim=1)
+        offset = torch.cat((o1, o2), dim=1)
+        mask = torch.sigmoid(mask)
+
+        return modulated_deform_conv(
+            x, offset, mask, self.weight, self.bias,
+            self.stride, self.padding, self.dilation,
+            self.groups, self.deformable_groups
+        )
 
 
 class PCDAlignment(nn.Module):
@@ -47,27 +79,27 @@ class PCDAlignment(nn.Module):
 
         self.upsample = nn.Upsample(
             scale_factor=2, mode='bilinear', align_corners=False)
-        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
 
     def forward(self, nbr_feat_l, ref_feat_l):
         upsampled_offset, upsampled_feat = None, None
         for i in range(3, 0, -1):
             level = f'l{i}'
             offset = torch.cat([nbr_feat_l[i - 1], ref_feat_l[i - 1]], dim=1)
-            offset = self.lrelu(self.offset_conv1[level](offset))
+            offset = self.relu(self.offset_conv1[level](offset))
             if i == 3:
-                offset = self.lrelu(self.offset_conv2[level](offset))
+                offset = self.relu(self.offset_conv2[level](offset))
             else:
-                offset = self.lrelu(self.offset_conv2[level](torch.cat(
+                offset = self.relu(self.offset_conv2[level](torch.cat(
                     [offset, upsampled_offset], dim=1)))
-                offset = self.lrelu(self.offset_conv3[level](offset))
+                offset = self.relu(self.offset_conv3[level](offset))
 
             feat = self.dcn_pack[level](nbr_feat_l[i - 1], offset)
             if i < 3:
                 feat = self.feat_conv[level](
                     torch.cat([feat, upsampled_feat], dim=1))
             if i > 1:
-                feat = self.lrelu(feat)
+                feat = self.relu(feat)
 
             if i > 1:
                 upsampled_offset = self.upsample(offset) * 2
@@ -75,9 +107,9 @@ class PCDAlignment(nn.Module):
 
         # Cascading
         offset = torch.cat([feat, ref_feat_l[0]], dim=1)
-        offset = self.lrelu(
-            self.cas_offset_conv2(self.lrelu(self.cas_offset_conv1(offset))))
-        feat = self.lrelu(self.cas_dcnpack(feat, offset))
+        offset = self.relu(
+            self.cas_offset_conv2(self.relu(self.cas_offset_conv1(offset))))
+        feat = self.relu(self.cas_dcnpack(feat, offset))
         return feat
 
 
@@ -86,52 +118,52 @@ class TSAFusion(nn.Module):
         super().__init__()
         self.center_frame_idx = center_frame_idx
         # Common
-        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
         self.upsample = nn.Upsample(
             scale_factor=2, mode='bilinear', align_corners=False)
         # temporal attention (before fusion conv)
         self.temporal_attn1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
         self.temporal_attn2 = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
-        self.feat_fusion = nn.Sequential(
+        self.feat_fusion = Sequential(
             nn.Conv2d(num_frame * num_feat, num_feat, 1, 1),
-            self.lrelu
+            self.relu
         )
 
         # spatial attention (after fusion conv)
         self.max_pool = nn.MaxPool2d(3, stride=2, padding=1)
         self.avg_pool = nn.AvgPool2d(3, stride=2, padding=1)
-        self.spatial_attn1 = nn.Sequential(
+        self.spatial_attn1 = Sequential(
             nn.Conv2d(num_frame * num_feat, num_feat, 1),
-            self.lrelu
+            self.relu
         )
-        self.spatial_attn2 = nn.Sequential(
+        self.spatial_attn2 = Sequential(
             nn.Conv2d(num_feat * 2, num_feat, 1),
-            self.lrelu
+            self.relu
         )
-        self.spatial_attn3 = nn.Sequential(
+        self.spatial_attn3 = Sequential(
             nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            self.lrelu
+            self.relu
         )
-        self.spatial_attn4 = nn.Sequential(
+        self.spatial_attn4 = Sequential(
             nn.Conv2d(num_feat, num_feat, 1),
-            self.lrelu,
+            self.relu,
             self.upsample,
             nn.Conv2d(num_feat, num_feat, 3, 1, 1)
         )
-        self.spatial_attn_l1 = nn.Sequential(
+        self.spatial_attn_l1 = Sequential(
             nn.Conv2d(num_feat, num_feat, 1),
-            self.lrelu
+            self.relu
         )
-        self.spatial_attn_l2 = nn.Sequential(
+        self.spatial_attn_l2 = Sequential(
             nn.Conv2d(num_feat * 2, num_feat, 3, 1, 1),
-            self.lrelu,
+            self.relu,
             nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            self.lrelu,
+            self.relu,
             self.upsample
         )
-        self.spatial_attn_add = nn.Sequential(
+        self.spatial_attn_add = Sequential(
             nn.Conv2d(num_feat, num_feat, 1),
-            self.lrelu,
+            self.relu,
             nn.Conv2d(num_feat, num_feat, 1)
         )
 
@@ -146,7 +178,9 @@ class TSAFusion(nn.Module):
         ).view(b, t, -1, h, w)
         # Correlation
         corr_l = [torch.sum(embedding[:, i, :, :, :] * embedding_ref, 1).unsqueeze(1) for i in range(t)]
-        corr_prob = torch.sigmoid(torch.cat(corr_l, dim=1)).unsqueeze(2).expand(b, t, c, h, w).contiguous().view(b, -1, h, w)
+        corr_prob = torch.sigmoid(
+            torch.cat(corr_l, dim=1)
+        ).unsqueeze(2).expand(b, t, c, h, w).contiguous().view(b, -1, h, w)
         aligned_feat = aligned_feat.view(b, -1, h, w) * corr_prob
         # Fusion
         feat = self.feat_fusion(aligned_feat)
@@ -178,40 +212,40 @@ class PredeblurModule(nn.Module):
         # Common
         self.upsample = nn.Upsample(
             scale_factor=2, mode='bilinear', align_corners=False)
-        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
 
-        self.conv_first = nn.Sequential(
+        self.conv_first = Sequential(
             nn.Conv2d(num_in_ch, num_feat, 3, 1, 1),
-            self.lrelu,
+            self.relu,
             *([] if hr_in else [
                 nn.Conv2d(num_feat, num_feat, 3, 2, 1),
-                self.lrelu,
+                self.relu,
                 nn.Conv2d(num_feat, num_feat, 3, 2, 1),
-                self.lrelu
+                self.relu
             ])
         )
 
         # Generate feature pyramid
-        self.stride_conv_l2 = nn.Sequential(
+        self.stride_conv_l2 = Sequential(
             nn.Conv2d(num_feat, num_feat, 3, 2, 1),
-            self.lrelu
+            self.relu
         )
-        self.stride_conv_l3 = nn.Sequential(
+        self.stride_conv_l3 = Sequential(
             nn.Conv2d(num_feat, num_feat, 3, 2, 1),
-            self.lrelu,
+            self.relu,
             ResidualBlockNoBN(num_feat=num_feat),
             self.upsample
         )
 
         self.resblock_l2_1 = ResidualBlockNoBN(num_feat=num_feat)
-        self.resblock_l2_2 = nn.Sequential(
+        self.resblock_l2_2 = Sequential(
             ResidualBlockNoBN(num_feat=num_feat),
             self.upsample
         )
-        self.resblock_l1_1 = nn.Sequential(
+        self.resblock_l1_1 = Sequential(
             *[ResidualBlockNoBN(num_feat=num_feat) for i in range(2)]
         )
-        self.resblock_l1_2 = nn.Sequential(
+        self.resblock_l1_2 = Sequential(
             *[ResidualBlockNoBN(num_feat=num_feat) for i in range(3)]
         )
 
@@ -231,8 +265,6 @@ class PredeblurModule(nn.Module):
 class EDVR(nn.Module):
     def __init__(
         self,
-        num_in_ch=3,
-        num_out_ch=3,
         num_feat=64,
         num_frame=5,
         deformable_groups=8,
@@ -253,36 +285,36 @@ class EDVR(nn.Module):
         self.with_tsa = with_tsa
         # activation function
         self.pixel_shuffle = nn.PixelShuffle(2)
-        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
 
-        self.conv_l1 = nn.Sequential(
+        self.conv_l1 = Sequential(
             *([
                 PredeblurModule(num_feat=num_feat, hr_in=self.hr_in),
                 nn.Conv2d(num_feat, num_feat, 1, 1)
             ] if with_predeblur else [
-                nn.Conv2d(num_in_ch, num_feat, 3, 1, 1),
-                self.lrelu
+                nn.Conv2d(3, num_feat, 3, 1, 1),
+                self.relu
             ]),
             *make_layer(ResidualBlockNoBN, num_extract_block, num_feat=num_feat)
         )
         # Extract pyramid features
-        self.conv_l2 = nn.Sequential(
+        self.conv_l2 = Sequential(
             nn.Conv2d(num_feat, num_feat, 3, 2, 1),
-            self.lrelu,
+            self.relu,
             nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            self.lrelu
+            self.relu
         )
-        self.conv_l3 = nn.Sequential(
+        self.conv_l3 = Sequential(
             nn.Conv2d(num_feat, num_feat, 3, 2, 1),
-            self.lrelu,
+            self.relu,
             nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            self.lrelu
+            self.relu
         )
 
         # pcd and tsa module
         self.pcd_align = PCDAlignment(
             num_feat=num_feat, deformable_groups=deformable_groups)
-        self.conv_last = nn.Sequential(
+        self.conv_last = Sequential(
             TSAFusion(
                 num_feat=num_feat,
                 num_frame=num_frame,
@@ -293,12 +325,12 @@ class EDVR(nn.Module):
             make_layer(ResidualBlockNoBN, num_reconstruct_block, num_feat=num_feat),
             nn.Conv2d(num_feat, num_feat * 4, 3, 1, 1),
             self.pixel_shuffle,
-            self.lrelu,
+            self.relu,
             nn.Conv2d(num_feat, 64 * 4, 3, 1, 1),
             self.pixel_shuffle,
-            self.lrelu,
+            self.relu,
             nn.Conv2d(64, 64, 3, 1, 1),
-            self.lrelu,
+            self.relu,
             nn.Conv2d(64, 3, 3, 1, 1)
         )
 

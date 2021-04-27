@@ -5,6 +5,8 @@ from torch import nn
 from torch.nn.utils import spectral_norm
 from torch.nn import functional as F
 
+from ove.utils.modeling import Sequential
+
 
 def get_norm_layer(norm_type="instance"):
     if norm_type == "batch":
@@ -68,7 +70,7 @@ class ResnetBlock(nn.Module):
             raise NotImplementedError("padding [%s] is not implemented" % padding_type)
         conv_block += [nn.Conv2d(dim, dim, kernel_size=3, padding=p, dilation=1), norm_layer(dim)]
 
-        return nn.Sequential(*conv_block)
+        return Sequential(*conv_block)
 
     def forward(self, x):
         out = x + self.conv_block(x)
@@ -156,7 +158,7 @@ class GlobalGenerator_DCDCv2(nn.Module):
                 norm_layer=norm_layer
             )
         ]
-        self.encoder = nn.Sequential(*model)
+        self.encoder = Sequential(*model)
 
         # decode
         model = []
@@ -229,7 +231,7 @@ class GlobalGenerator_DCDCv2(nn.Module):
             nn.Conv2d(min(ngf, 64), output_nc, kernel_size=7, padding=0),
             nn.Tanh(),
         ]
-        self.decoder = nn.Sequential(*model)
+        self.decoder = Sequential(*model)
 
     def forward(self, input, flow="enc_dec"):
         if flow == "enc":
@@ -294,7 +296,7 @@ class NonLocalBlock2D_with_mask_Res(nn.Module):
                     norm_layer=norm_layer
                 )
             ]
-        self.res_block = nn.Sequential(*model)
+        self.res_block = Sequential(*model)
 
     def forward(self, x, mask):  ## The shape of mask is Batch*1*H*W
         batch_size = x.size(0)
@@ -367,7 +369,7 @@ class Mapping_Model_with_mask(nn.Module):
             oc = min(64 * (2 ** (i + 1)), mc)
             model += [nn.Conv2d(ic, oc, 3, 1, 1), norm_layer(oc), activation]
 
-        self.before_NL = nn.Sequential(*model)
+        self.before_NL = Sequential(*model)
 
         self.NL = NonLocalBlock2D_with_mask_Res(
             mc,
@@ -396,7 +398,7 @@ class Mapping_Model_with_mask(nn.Module):
             oc = min(64 * (2 ** (3 - i)), mc)
             model += [nn.Conv2d(ic, oc, 3, 1, 1), norm_layer(oc), activation]
         model += [nn.Conv2d(128, 64, 3, 1, 1)]
-        self.after_NL = nn.Sequential(*model)
+        self.after_NL = Sequential(*model)
 
     def forward(self, input, mask):
         x = self.before_NL(input)
@@ -435,7 +437,7 @@ class Mapping_Model(nn.Module):
             oc = min(64 * (2 ** (3 - i)), mc)
             model += [nn.Conv2d(ic, oc, 3, 1, 1), norm_layer(oc), activation]
         model += [nn.Conv2d(128, 64, 3, 1, 1)]
-        self.model = nn.Sequential(*model)
+        self.model = Sequential(*model)
 
     def forward(self, input):
         return self.model(input)

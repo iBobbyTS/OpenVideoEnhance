@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.parallel.data_parallel import DataParallel
+from ove.utils.modeling import Sequential
 
 
 class CallbackContext:
@@ -119,7 +120,7 @@ class UNetConvBlock(nn.Module):
             block.append(nn.LeakyReLU(0.2, True))
             in_size = out_size
 
-        self.block = nn.Sequential(*block)
+        self.block = Sequential(*block)
 
     def forward(self, x):
         return self.block(x)
@@ -131,7 +132,7 @@ class UNetUpBlock(nn.Module):
         if up_mode == "upconv":
             self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
         elif up_mode == "upsample":
-            self.up = nn.Sequential(
+            self.up = Sequential(
                 nn.Upsample(mode="bilinear", scale_factor=2, align_corners=False),
                 nn.ReflectionPad2d(1),
                 nn.Conv2d(in_size, out_size, kernel_size=3, padding=0),
@@ -193,7 +194,7 @@ class UNet(nn.Module):
         self.depth = depth - 1
         prev_channels = in_channels
 
-        self.first = nn.Sequential(
+        self.first = Sequential(
             *[nn.ReflectionPad2d(3), nn.Conv2d(in_channels, 2 ** wf, kernel_size=7), nn.LeakyReLU(0.2, True)]
         )
         prev_channels = 2 ** wf
@@ -203,7 +204,7 @@ class UNet(nn.Module):
         for i in range(depth):
             if antialiasing and depth > 0:
                 self.down_sample.append(
-                    nn.Sequential(
+                    Sequential(
                         *[
                             nn.ReflectionPad2d(1),
                             nn.Conv2d(prev_channels, prev_channels, kernel_size=3, stride=1, padding=0),
@@ -215,7 +216,7 @@ class UNet(nn.Module):
                 )
             else:
                 self.down_sample.append(
-                    nn.Sequential(
+                    Sequential(
                         *[
                             nn.ReflectionPad2d(1),
                             nn.Conv2d(prev_channels, prev_channels, kernel_size=4, stride=2, padding=0),
@@ -237,11 +238,11 @@ class UNet(nn.Module):
             prev_channels = 2 ** (wf + i)
 
         if with_tanh:
-            self.last = nn.Sequential(
+            self.last = Sequential(
                 *[nn.ReflectionPad2d(1), nn.Conv2d(prev_channels, out_channels, kernel_size=3), nn.Tanh()]
             )
         else:
-            self.last = nn.Sequential(
+            self.last = Sequential(
                 *[nn.ReflectionPad2d(1), nn.Conv2d(prev_channels, out_channels, kernel_size=3)]
             )
 
