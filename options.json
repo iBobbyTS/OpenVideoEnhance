@@ -1,9 +1,10 @@
 {
   "global_opt": {
-    "ffmpeg_bin_path": "/usr/local/bin"
+    "ffmpeg_bin_path": "/usr/local/bin",
+    "process_batch_size": 100
   },
   "input_opt": {
-    "path": "/Users/ibobby/Dataset/frame_test/vid.mov"
+    "path": "/Users/ibobby/Dataset/out/t/%d.png"
   },
   "temp_opt": {
     "path": "../tmp",
@@ -11,33 +12,33 @@
   },
   "preprocess_opt": {
     "lib": "ffmpeg",
-    "frame_range": [5, 15],
-    "resize": [64, 48],
+    "frame_range": [0, 0],
+    "resize": null,
     "": "Only for FFmpeg",
     "decoder": null
   },
   "model_opt": {
     "empty_cache": true,
     "default_model_dir": "/Users/ibobby/Dataset/model_weights",
-    "to_do": ["ssm"],
+    "to_do": ["esrgan"],
     "model_path": [null, null, null],
-    "kwargs": [{"mode": "nearest"}, {"mode": "bicubic"}, {}]
+    "kwargs": [{"mode": "bicubic"}, {"sf": 5}, {}]
   },
   "postprocess_opt": {
-    "type": "img",
-    "lib": "cv2",
-    "fourcc": "hvc1",
+    "type": "vid",
+    "lib": "ffmpeg",
+    "fourcc": "avc1",
     "encoder": "libx265",
-    "pix_fmt": "yuv420p",
+    "pix_fmt": "yuv420p10le",
     "resize": null,
-    "in_fps": null,
+    "in_fps": 60,
     "out_fps": null,
-    "crf": 28,
-    "ffmpeg-params": "",
-    "ext": "jpg",
+    "crf": 18,
+    "ffmpeg-params": null,
+    "ext": "png",
     "dtype": "uint8"
   },
   "output_opt": {
-    "path": "/Users/ibobby/Dataset/out/o"
+    "path": "/Users/ibobby/Dataset/out/t2"
   }
 }

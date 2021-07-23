@@ -1,7 +1,7 @@
 import torch
 
 from ove import utils
-from . import model
+from .model import SSM
 
 
 class RTer:
@@ -9,29 +9,29 @@ class RTer:
             self,
             height, width,
             model_path=None, default_model_dir=None,
-            sf=2, resize_hotfix=False,
+            sf=2, resize_hotfix=False, device=torch.device('cpu'),
             *args, **kwargs
     ):
-        torch.set_grad_enabled(False)
         # Save parameters
-        self.sf = round(float(sf))
+        self.sf = sf
         self.resize_hotfix = resize_hotfix
+        self.device = device
         # Initialize pader
         self.pader = utils.modeling.Pader(
             width, height, 32, extend_func='replication'
-        )
-        self.dim = self.pader.padded_size[::-1]
+        ).to(self.device)
+        self.padded_width, self.padded_height = self.pader.padded_size
         self.padding_result = self.pader.padding_result
         # Solve for model path
         model_path = utils.folder.check_model(default_model_dir, model_path, utils.dictionaries.model_paths['ssm'])
-        # Check GPU
-        self.cuda_availability = torch.cuda.is_available()
-        self.device = torch.device('cuda' if self.cuda_availability else 'cpu')
         # Initialize model
-        self.model = model.SSM(*self.dim, self.device, self.sf).to(self.device)
+        self.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        self.model = SSM(self.padded_height, self.padded_width, self.device, self.sf)
+        self.model.to(self.dtype).to(self.device)
         # Load state dict
         state_dict = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(state_dict)
+        self.model.eval()
         # Initialize batch
         self.need_to_init = True
 
@@ -44,10 +44,10 @@ class RTer:
 
     def encode(self, frame):
         frame.convert(
-            place='torch', dtype='float32',
+            place='torch', dtype=str(self.dtype).split('.')[1],
             shape_order='fchw', channel_order='rgb', range_=(0.0, 1.0)
         )
-        frame.tensor = self.pader.pad(frame.tensor)
+        frame.tensor = self.pader(frame.tensor)
         frame.unsqueeze(1)
         return frame
 
@@ -65,8 +65,9 @@ class RTer:
         frames = self.encode(frames)
         returning_tensor = utils.tensor.Tensor(
             tensor=torch.empty(
-                (len(frames) * self.sf - (1 if self.need_to_init else 0) * self.sf + (self.sf if last else 0), 3, *self.dim),
-                dtype=torch.float32,
+                (len(frames) * self.sf - (1 if self.need_to_init else 0) * self.sf + (self.sf if last else 0),
+                 3, self.padded_height, self.padded_width),
+                dtype=self.dtype,
                 device=self.device
             ),
             shape_order='fchw', channel_order='rgb',

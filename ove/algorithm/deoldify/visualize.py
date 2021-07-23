@@ -1,3 +1,4 @@
+import torch
 import torch.nn.functional as F
 from fastai import vision, basic_data
 
@@ -9,6 +10,7 @@ class MyNet:
         self.learn = (
             gen_inference_deep if model == 'a' else gen_inference_wide
         )(state_dict=state_dict, temp_path=temp_path)
+        self.learn.model.to(torch.float16 if torch.cuda.is_available() else torch.float32)
         self.norm, self.denorm = vision.normalize_funcs(*vision.data.imagenet_stats)
 
     def __call__(self, frame, resized, target, count):

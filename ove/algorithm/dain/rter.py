@@ -1,4 +1,5 @@
 import torch
+import cv2
 
 from ove import utils
 from . import models
@@ -20,30 +21,37 @@ class RTer:
         self.width = width
         self.height = height
         # Initialize pader
+        self.dtype = torch.float32
         self.pader = utils.modeling.Pader(
             width, height, 128, extend_func='replication'
         )
         # Solve for model path
-        model_path = utils.folder.check_model(
-            default_model_dir, model_path, utils.dictionaries.model_paths['dain']
+        base_model_path = utils.folder.check_model(
+            default_model_dir, model_path, utils.dictionaries.model_paths['dain'].replace('.pth', '-base.pth')
         )
+        rectify_model_path = utils.folder.check_model(
+            default_model_dir, model_path, utils.dictionaries.model_paths['dain'].replace('.pth', '-rectify.pth')
+        ) if rectify else None
         # Initialize model
         self.model = models.__dict__[self.network](
             size=(width, height),
             padding=self.pader.slice,
-            timestep=1/self.sf,
+            batch_size=1,
+            sf=self.sf,
             rectify=rectify,
             useAnimationMethod=animation,
         ).cuda()
         self.device = torch.device('cuda')
         # Load state dict
-        model_dict = self.model.state_dict()
-        pretrained_dict = {k: v for k, v in torch.load(model_path).items() if k in model_dict}
-        model_dict.update(pretrained_dict)
-        self.model.load_state_dict(model_dict)
+        self.model.load_state_dict(dict(
+            **torch.load(base_model_path),
+            **(torch.load(rectify_model_path) if rectify else {})
+        ))
         self.model.eval()
+        self.model.to(self.dtype)
         # Initialize batch
         self.need_to_init = True
+        self.count = 0
 
     def get_output_effect(self):
         return {
@@ -54,10 +62,10 @@ class RTer:
 
     def encode(self, frame: utils.tensor.Tensor):
         frame.convert(
-            place='torch', dtype='float32',
+            place='torch', dtype=str(self.dtype).split('.')[1],
             shape_order='fchw', channel_order='rgb', range_=(0.0, 1.0)
         )
-        frame.tensor = self.pader.pad(frame.tensor)
+        frame.tensor = self.pader(frame.tensor)
         frame.unsqueeze(1)
         return frame
 
@@ -74,7 +82,7 @@ class RTer:
             tensor=torch.empty(
                 (len(frames) * self.sf - (1 if self.need_to_init else 0) * self.sf + (self.sf if last else 0),
                  3, self.height, self.width),
-                dtype=torch.float32,
+                dtype=self.dtype,
                 device=self.device
             ),
             shape_order='fchw', channel_order='rgb',
@@ -92,6 +100,9 @@ class RTer:
             self.tensor_0, self.tensor_1 = self.tensor_1, frame
             I0 = self.tensor_0.tensor
             I1 = self.tensor_1.tensor
+            self.count += 1
+            cv2.imwrite(f'/content/img/{self.count}-I0.jpg', (I0[0]*255.0).permute(1, 2, 0).round().byte().cpu().numpy()[:, :, ::-1])
+            cv2.imwrite(f'/content/img/{self.count}-I1.jpg', (I1[0]*255.0).permute(1, 2, 0).round().byte().cpu().numpy()[:, :, ::-1])
             count = self.model(I0, I1, returning_tensor, count)
             if last and i == len(frames):
                 for _ in range(1, self.sf + 1):

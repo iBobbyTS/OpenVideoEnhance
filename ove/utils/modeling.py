@@ -57,24 +57,25 @@ def calculate_expansion(width, height, factor, aline_to_edge):
     return left, right, top, bottom
 
 
-class Pader:
+class Pader(nn.Module):
     def __init__(
             self,
             width, height, factor, aline_to_edge=False, extend_func='replication',
             *args
     ):
+        super().__init__()
         left, right, top, bottom = calculate_expansion(width, height, factor, aline_to_edge)
         self.padding_result = (left, right, top, bottom)
         self.slice = (left, width + left, top, height + top)
         self.padded_size = (width + left + right, height + top + bottom)
         self.pader = {
-            'replication': torch.nn.ReplicationPad2d,
-            'reflection': torch.nn.ReflectionPad2d,
-            'constant': torch.nn.ConstantPad3d,
+            'replication': nn.ReplicationPad2d,
+            'reflection': nn.ReflectionPad2d,
+            'constant': nn.ConstantPad3d,
         }[extend_func]([left, right, top, bottom], *args)
 
-    def pad(self, tensor):
-        return self.pader(tensor)
+    def forward(self, x):
+        return self.pader(x)
 
 
 def sequential(*functions):
@@ -92,11 +93,15 @@ def sequential(*functions):
     return sequential_process
 
 
-def set_cudnn(model_opt):
+def set_gpu_status(model_opt):
+    torch.set_grad_enabled(False)
     if torch.cuda.is_available():
         _ = len(model_opt['to_do']) <= 1
         torch.backends.cudnn.enabled = _
         torch.backends.cudnn.benchmark = _
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
 
 
 class Sequential(nn.Sequential):
@@ -110,3 +115,17 @@ class Sequential(nn.Sequential):
             if self.empty_cache:
                 empty_cache()
         return x
+
+
+def make_contiguous_(tensor):
+    if not tensor.is_contiguous():
+        return tensor.contiguous()
+    else:
+        return tensor
+
+
+def make_contiguous(tensors):
+    if not isinstance(tensors, (list, tuple)):
+        return make_contiguous_(tensors)
+    else:
+        return [make_contiguous_(tensor) for tensor in tensors]

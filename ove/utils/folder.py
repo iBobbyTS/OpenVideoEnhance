@@ -33,7 +33,7 @@ def path2list(path):
     return [path, name, ext]
 
 
-def listdir(folder):  # 输入文件夹路径，输出文件夹内的文件，排序并移除可能的无关文件
+def listdir(folder) -> iter:  # 输入文件夹路径，输出文件夹内的文件，排序并移除可能的无关文件
     """
         List the objects in the input directory, remove unwanted ones and sort them.
 
@@ -44,7 +44,7 @@ def listdir(folder):  # 输入文件夹路径，输出文件夹内的文件，�
 
         Returns
         -------
-        files : list
+        files : iter
             List of the files in the input folder.
 
         Examples

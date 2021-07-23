@@ -56,7 +56,7 @@ def EasyOut(t):
 
 @njit
 def Dist(x0, y0, x1, y1):
-    return ((x1 - x0) ** 2 + (y1 - y0) ** 2)
+    return (x1 - x0) ** 2 + (y1 - y0) ** 2
 
 
 @njit
@@ -67,8 +67,8 @@ def BlurIt(image, vector, smooth):
     im = np.empty((w, h, 4))
     im.fill(0)
 
-    for y in range(0, h):
-        for x in range(0, w):
+    for y in range(h):
+        for x in range(w):
             xx, yy = vector[x, y]
 
             xx = math.floor(xx * smooth)

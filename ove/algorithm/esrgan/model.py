@@ -62,29 +62,31 @@ class RRDBNet(nn.Module):
         self,
         num_in_ch, num_out_ch,
         num_feat=64, num_block=23, num_grow_ch=32,
-        interpolate_opt=None
+        interpolate_opt=None, scale_factors=(2, 2)
     ):
         super().__init__()
         relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
         # Networks
         self.block1 = nn.Conv2d(num_in_ch, num_feat, (3, 3), (1, 1), (1, 1))
         self.block2 = Sequential(
-            *make_layer(
-                RRDB, num_block, num_feat=num_feat, num_grow_ch=num_grow_ch
-            ),
+            *[RRDB(num_feat=num_feat, num_grow_ch=num_grow_ch) for _ in range(num_block)],
             nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1))
         )
         self.block3 = Sequential(
-            nn.Upsample(scale_factor=2, **interpolate_opt),
+            nn.Upsample(scale_factor=scale_factors[0], **interpolate_opt),
             nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1)),
             relu,
-            nn.Upsample(scale_factor=2, **interpolate_opt),
+            nn.Upsample(scale_factor=scale_factors[1], **interpolate_opt),
             nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1)),
             relu,
             nn.Conv2d(num_feat, num_feat, (3, 3), (1, 1), (1, 1)),
             relu,
             nn.Conv2d(num_feat, num_out_ch, (3, 3), (1, 1), (1, 1))
         )
+        # nn.Upsample(
+        #     scale_factor=scale_factors[1], **interpolate_opt,
+        #     **({} if isinstance(scale_factors[1], int) else {'recompute_scale_factor': True})
+        # )
 
     def forward(self, x, target, count):
         feat = self.block1(x)

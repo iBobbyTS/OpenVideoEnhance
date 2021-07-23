@@ -1,6 +1,7 @@
 model_paths = {
     'ssm': 'SSM/official.pth',
     'dain': 'DAIN/official.pth',
+    'bmbc': 'BMBC/official.pth',
     'esrgan': {
         'pd': 'ESRGAN/PSNR_SRx4_DF2K.pth',
         'dk': 'ESRGAN/SRx4_DF2KOST.pth',
@@ -34,7 +35,7 @@ model_configs = {
         'ld': [{'num_feat': 128, 'num_reconstruct_block': 40, 'hr_in': True, 'with_predeblur': True}, 5, 1, 16, {16: 992}],
         'ldc': [{'num_feat': 128, 'num_reconstruct_block': 40, 'hr_in': True, 'with_predeblur': True}, 5, 1, 16, {16: 992}],
         'l4r': [{'num_feat': 128, 'num_reconstruct_block': 40}, 5, 4, 4, {16: 288}],
-        'l4v': [{'num_feat': 128, 'num_reconstruct_block': 40, 'num_frame': 7}, 7, 4, 4, {16: 256}],
+        'l4v': [{'num_feat': 128, 'num_reconstruct_block': 40, 'num_frame': 7}, 7, 4, 4, {16: 388}],
         'l4br': [{'num_feat': 128, 'num_reconstruct_block': 40, 'with_predeblur': True}, 5, 4, 4, {16: 256}],
         'm4r': [{'with_tsa': False}, 5, 4, 4, {16: 416}],
         'mt4r': [{}, 5, 4, 4, {16: 416}]
@@ -44,6 +45,7 @@ model_configs = {
 model_channel_order = {
     'ssm': 'rgb',
     'dain': 'rgb',
+    'bmbc': 'rgb',
     'esrgan': 'rgb',
     'edvr': 'rgb',
     'bopbl': 'rgb',
@@ -53,6 +55,7 @@ model_channel_order = {
 model_extra_frames = {
     'ssm': (0, 2),
     'dain': (0, 2),
+    'bmbc': (0, 2),
     'esrgan': (0, 0),
     'edvr': (3, 3),
     'bopbl': (0, 0),

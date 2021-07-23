@@ -22,7 +22,7 @@ def make_extension(
     return CUDAExtension(
         name=f'ove_ext.{belong}.{name}',
         sources=[
-            f'ove_ext/{belong}/{name}/{f}'
+            f'extension/{belong}/{name}/{f}'
             for f in (
                 'cuda_kernel.cu', 'cuda.cc',
                 *([] if extra_file is None else extra_file)
@@ -72,6 +72,7 @@ ext_modules = [
         belong='basicsr',
         name='dcn',
         extra_compile_args=basicsr_extra_compile_args,
+        define_macros=[('WITH_CUDA', None)],
         extra_file=['ext.cc']
     )
 ]
@@ -79,7 +80,7 @@ ext_modules = [
 setup(
     name='ove_ext',
     version=version,
-    packages=['ove_ext'],
+    packages=['extension'],
     ext_modules=ext_modules,
     cmdclass={'build_ext': BuildExtension},
     zip_safe=False

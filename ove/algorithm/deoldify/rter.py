@@ -13,6 +13,7 @@ class RTer:
             self,
             height, width,
             temp_path,
+            device=torch.device('cpu'),
             model_path=None, default_model_dir=None,
             model_name='v', render_factor=35,
             *args, **kwargs
@@ -20,6 +21,7 @@ class RTer:
         self.height = height
         self.width = width
         self.render_size = render_factor * 16
+        self.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
         # Make sure model exists
         assert model_name in utils.dictionaries.model_paths['deoldify'].keys(), \
             f"Choose nets between {list(utils.dictionaries.model_paths['deoldify'].keys())}"
@@ -30,7 +32,6 @@ class RTer:
         # Check GPU
         self.cuda_availability = torch.cuda.is_available()
         self.device = torch.device('cuda' if self.cuda_availability else 'cpu')
-        device.set(self.cuda_availability)
         # Initialize model_name
         self.model = MyNet(
             state_dict=torch.load(model_path, map_location=self.device),
@@ -50,7 +51,7 @@ class RTer:
         if isinstance(frame, (list, tuple)):
             frame = utils.tensor.stack(frame)
         frame.convert(
-            place='torch', dtype='float32',
+            place='torch', dtype=str(self.dtype).split('.')[1],
             shape_order='fchw', channel_order='rgb', range_=(0.0, 1.0)
         )
         frame.update(torch.stack([
@@ -67,7 +68,7 @@ class RTer:
             resized_frame[i] = numpy.asarray(Image.fromarray(f).resize(
                 (self.render_size, self.render_size), resample=Image.BICUBIC
             ))
-        resized_frame = torch.from_numpy(resized_frame).to(self.device).permute(0, 3, 1, 2).float()/255.0
+        resized_frame = torch.from_numpy(resized_frame).to(self.dtype).to(self.device).permute(0, 3, 1, 2)/255.0
         return len(frame), (frame, resized_frame)
 
     @staticmethod
@@ -81,11 +82,11 @@ class RTer:
         returning_tensor = utils.tensor.Tensor(
             tensor=(torch.empty(
                 len(frames), 3, self.height, self.width,
-                dtype=torch.float32,
+                dtype=self.dtype,
                 device=self.device
             ) if self.cuda_availability else numpy.empty(
                 (len(frames), 3, self.height, self.width),
-                dtype=numpy.float32
+                dtype=self.dtype
             )),
             shape_order='fchw', channel_order='rgb',
             range_=(0.0, 1.0), clamp=False

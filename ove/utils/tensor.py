@@ -4,43 +4,54 @@ import copy
 
 name2module_dict = {'numpy': numpy, 'torch': torch}
 
-
-class Tensor:
-    dtype_precision = {
+dtype_precision = {
         'uint8': 0,
         'int8': 0,
         'uint16': 2,
         'int16': 2,
-        'float16': 1,
-        'float32': 3,
-        'float64': 4,
+        'int32': 3,
+        'float16': 4,
+        'float32': 5,
+        'float64': 6,
+}
+dtype_speed = {
+    'uint8': 5,
+    'int8': 5,
+    'uint16': 4,
+    'int16': 4,
+    'int32': 1,
+    'float16': 3,
+    'float32': 2,
+    'float64': 1
+}
+place_speed = {
+    'numpy': 0 if torch.cuda.is_available() else 1,
+    'torch': 1 if torch.cuda.is_available() else 0
+}
+torch_dtype = {
+    'uint8': torch.uint8,
+    'int8': torch.int8,
+    'int32': torch.int32,
+    'float64': torch.float64,
+    'float32': torch.float32,
+    'float16': torch.float16,
+}
+unsupported_dtype = {
+    'numpy': {
+        'uint16': ('float32', 'int32')
+    },
+    'torch': {
+        'bfloat16': ('float32', 'float32')
     }
-    dtype_speed = {
-        'uint8': 5,
-        'int8': 5,
-        'uint16': 4,
-        'int16': 4,
-        'float16': 3,
-        'float32': 2,
-        'float64': 1
-    }
-    place_speed = {
-        'numpy': 0 if torch.cuda.is_available() else 1,
-        'torch': 1 if torch.cuda.is_available() else 0
-    }
-    torch_dtype = {
-        'uint8': torch.uint8,
-        'int8': torch.int8,
-        'float64': torch.float64,
-        'float32': torch.float32,
-        'float16': torch.float16,
-    }
+}
 
+
+class Tensor:
     def __init__(
-            self,
-            tensor,
-            shape_order: str, channel_order: str,
-            range_: tuple, clamp=True
+        self,
+        tensor,
+        shape_order: str, channel_order: str,
+        range_: tuple, clamp: bool = True
     ):
         # Pre store
         self.tensor = tensor
@@ -73,7 +84,9 @@ class Tensor:
         self.shape = self.size()
         if clamp:
             if self.tensor.max() > self.max or self.tensor.min() > self.min:
-                self.tensor = self.clamp(self.min, self.max)
+                self.clamp(
+                    *map(lambda x: (round(x) if 'int' in self.dtype else x), (self.min, self.max))
+                )
 
     def __len__(self):
         return len(self.tensor)
@@ -116,27 +129,26 @@ class Tensor:
         self.tensor[index] = tensor.tensor if isinstance(tensor, Tensor) else tensor
 
     # Internal methods
-    def clamp(self, min_, max_):
-        return {
+    def clamp(self, *range_):
+        self.tensor = {
             'numpy': numpy.clip,
             'torch': torch.clamp
-        }[self.place](self.tensor, min_, max_)
+        }[self.place](self.tensor, *(range_ if range_ else [self.min, self.max]))
 
     # Conversion functions
     def cvt_place(self, place):
-        if place is not None:
-            if place != self.place:
-                if place == 'torch':
-                    for i in self.tensor.strides:
-                        if i < 0:
-                            self.tensor = self.tensor.copy()
-                            break
-                    self.tensor = torch.from_numpy(self.tensor)
-                if place == 'numpy':
-                    if str(self.tensor.device) != 'cpu':
-                        self.tensor = self.tensor.cpu()
-                    self.tensor = self.tensor.numpy()
-                self.place = place
+        if (place is not None) and (place != self.place):
+            if place == 'torch':
+                for i in self.tensor.strides:  # Negative index not support by PyTorch
+                    if i < 0:
+                        self.tensor = self.tensor.copy()
+                        break
+                self.tensor = torch.from_numpy(self.tensor)
+            if place == 'numpy':
+                if str(self.tensor.device) != 'cpu':
+                    self.tensor = self.tensor.cpu()
+                self.tensor = self.tensor.numpy()
+            self.place = place
 
     def cvt_device(self, device):
         if device is not None:
@@ -166,15 +178,14 @@ class Tensor:
                     print(f'Unknown conversion: {self.channel_order} to {channel_order}')
 
     def cvt_dtype(self, dtype):
-        if dtype is not None:
-            if dtype != self.dtype:
-                if self.tensor.max() > self.max or self.tensor.min() > self.min:
-                    self.tensor = self.clamp(self.min, self.max)
-                if self.place == 'numpy':
-                    self.tensor = self.tensor.astype(dtype)
-                elif self.place == 'torch':
-                    self.tensor = self.tensor.to(self.torch_dtype[dtype])
-                self.dtype = dtype
+        if (dtype is not None) and (dtype != self.dtype):
+            if self.tensor.max() > self.max or self.tensor.min() > self.min:
+                self.clamp(self.min, self.max)
+            if self.place == 'numpy':
+                self.tensor = self.tensor.astype(dtype)
+            elif self.place == 'torch':
+                self.tensor = self.tensor.to(torch_dtype[dtype])
+            self.dtype = dtype
 
     def cvt_range(self, range_):
         if range_ is not None:
@@ -190,14 +201,22 @@ class Tensor:
             place=None, device='auto', dtype=None,
             shape_order=None, channel_order=None, range_=None
     ):
+        if (place is not None) and (self.place != place):
+            if self.dtype in unsupported_dtype[self.place].keys():
+                self.cvt_dtype(unsupported_dtype[self.place][self.dtype])
+            if dtype in unsupported_dtype[place].keys():
+                self.cvt_dtype(unsupported_dtype[place][dtype][0])
+        if ((place is not None) and (self.place != place) and (place_speed[place] == 1)) or (dtype in unsupported_dtype[place].keys()):
+            self.cvt_place(place)
+            self.cvt_device(device)
         executions = [
             (self.cvt_shape_order, shape_order),
             (self.cvt_channel_order, channel_order)
         ]
         if dtype is not None and self.dtype != dtype:
-            if self.dtype_speed[dtype] >= self.dtype_speed[self.dtype]:
+            if dtype_speed[dtype] >= dtype_speed[self.dtype]:
                 # float32 to uint8, float32 to float16
-                if self.dtype_precision[dtype] <= self.dtype_precision[self.dtype]:
+                if dtype_precision[dtype] <= dtype_precision[self.dtype]:
                     # *float2int/float2float/int2int
                     executions.insert(0, (self.cvt_range, range_))
                     executions.insert(1, (self.cvt_dtype, dtype))
@@ -205,7 +224,7 @@ class Tensor:
                     executions.insert(0, (self.cvt_dtype, dtype))
                     executions.insert(1, (self.cvt_range, range_))
             else:  # uint8 to float32, float16 to float32
-                if self.dtype_precision[dtype] <= self.dtype_precision[self.dtype]:
+                if dtype_precision[dtype] <= dtype_precision[self.dtype]:
                     # *float2int/float2float/int2int
                     executions.extend([
                         (self.cvt_range, range_),
@@ -217,15 +236,12 @@ class Tensor:
                         (self.cvt_range, range_)
                     ])
 
-        if place is not None and self.place != place:
-            if self.place_speed[place] == 1:
-                executions.insert(0, (self.cvt_place, place))
-                executions.insert(1, (self.cvt_device, device))
-            else:
-                executions.extend([(self.cvt_place, place), (self.cvt_device, device)])
         # Exec
         for func, arg in executions:
             func(arg)
+        if (place is not None) and (self.place != place) and (place_speed[place] == 0):
+            self.cvt_place(place)
+            self.cvt_device(device)
         self.shape = self.size()
         return self.tensor
 
@@ -254,7 +270,6 @@ class Tensor:
         self.shape_order_str = f"{self.shape_order_str[:index]}{name}{self.shape_order_str[index:]}"
         self.shape_order = self.shape_order_str2dict(self.shape_order_str)
         self.shape = self.size()
-
 
 
 def stack(tensors: list):

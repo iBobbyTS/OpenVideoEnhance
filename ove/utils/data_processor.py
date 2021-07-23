@@ -17,7 +17,7 @@ class DataLoader:
         opt: preprocess_opt
         """
         ffmpeg_bin_path = global_opt['ffmpeg_bin_path']
-        self.count = max((0 if (_ := opt['frame_range']) is None and _[0] == 0 else _[0]) - frames_before, 0)
+        self.count = max((0 if ((_ := opt['frame_range']) is None or _[0] == 0) else _[0]) - frames_before, 0)
         self.input_type = video_input[0]
         self.lib = opt['lib']
         real_path = f'{video_input[1][0]}/{video_input[1][1]}{video_input[1][2]}'
@@ -29,18 +29,23 @@ class DataLoader:
                 fps = self.video.get(5)
                 frame_count = int(self.video.get(7))
                 self.video.set(1, self.count)
-                self.info_func = lambda: (self.video.get(0), int(self.video.get(1)), None)
                 self.read_func = lambda x: self.video.read()[1]
             elif self.lib == 'ffmpeg':
                 # FFprobe
                 ffprobe_out = eval(subprocess.getoutput(
                     f"{os.path.join(ffmpeg_bin_path, 'ffprobe')} -hide_banner -v quiet -select_streams v -show_entries "
-                    'stream=height,width,r_frame_rate,nb_frames,codec_tag_string '
+                    'stream=height,width,r_frame_rate,nb_frames,codec_tag_string:stream_tags=duration '
                     f"-print_format json '{real_path}'"
                 ))['streams'][0]
                 width, height = map(ffprobe_out.get, ('width', 'height'))
-                frame_count = int(ffprobe_out['nb_frames'])
                 fps = eval(ffprobe_out['r_frame_rate'])
+                if ffprobe_out.get('nb_frames', False):
+                    frame_count = int(ffprobe_out['nb_frames'])
+                else:
+                    duration = ffprobe_out['tags']['DURATION']
+                    duration = duration.split(':')
+                    duration = int(duration[0]) * 3600 + int(duration[1]) * 60 + float(duration[2])
+                    frame_count = round(duration * fps)
                 # Open pipe
                 command = [os.path.join(ffmpeg_bin_path, 'ffmpeg'), '-loglevel', 'panic']
                 if opt['decoder'] is not None:
@@ -49,31 +54,25 @@ class DataLoader:
                     '-ss', str(self.count / fps),
                     '-i', real_path,
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % tuple(_)]),
-                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}24',
+                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}48',
                     '-'
                 ])
                 self.pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=width * height * 3)
                 # Define functions
-                self.info_func = lambda: (
-                    (1000 / fps) * (self.count - 1 if self.count > 1 else 0),
-                    self.count, self.count == frame_count
-                )
                 self.read_func = lambda: numpy.frombuffer(
-                    self.pipe.stdout.read(width * height * 3),
-                    dtype='uint8'
-                ).reshape((height, width, 3))
+                    self.pipe.stdout.read(width * height * 3 * 2),
+                    dtype='uint16'
+                ).reshape((height, width, 3)).astype(numpy.int32)
         elif self.input_type == 'img':
             self.count += 1
-            self.files = utils.folder.listdir(real_path)
+            self.files = utils.folder.listdir(os.path.split(real_path)[0] if '%' in os.path.split(real_path)[-1] else real_path)
+            print(real_path)
             frame_count = len(self.files)
             height, width = cv2.imread(os.path.join(
-                real_path, self.files[0]
+                os.path.split(real_path)[0] if '%' in os.path.split(real_path)[-1] else real_path, self.files[0]
             )).shape[0:2]
             fps = 1
             if self.lib == 'cv2':
-                self.info_func = lambda: (
-                    (1000 / fps) * (self.count - 1 if self.count > 1 else 0),
-                    self.count, self.count == frame_count)
                 self.read_func = lambda x: cv2.imread(os.path.join(
                     real_path, self.files[self.count - 1]
                 ))
@@ -84,21 +83,17 @@ class DataLoader:
                 if opt['decoder'] is not None:
                     command.extend(['-c:v', opt['decoder']])
                 command.extend([
-                    '-pattern_type', 'glob',
-                    '-r', '1', '-ss', str(self.count / fps),
-                    '-i', f'{real_path}/*{os.path.splitext(self.files[0])[1]}',
+                    '-ss', str((self.count - 1) / 25),
+                    '-i', real_path,
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % tuple(_)]),
-                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}24',
+                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}48',
                     '-'
                 ])
                 self.pipe = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=100000000)
-                self.info_func = lambda: (
-                    (1000 / fps) * (self.count - 1 if self.count > 1 else 0),
-                    self.count, self.count == frame_count)
                 self.read_func = lambda: numpy.frombuffer(
-                    self.pipe.stdout.read(width * height * 3),
-                    dtype=numpy.uint8
-                ).reshape((height, width, 3))
+                    self.pipe.stdout.read(width * height * 3 * 2),
+                    dtype=numpy.uint16
+                ).reshape((height, width, 3)).astype(numpy.int32)
 
         # Public
         if self.lib == 'ffmpeg':
@@ -108,12 +103,13 @@ class DataLoader:
                 self.read_func,
                 lambda x: cv2.resize(x, tuple(_), interpolation=cv2.INTER_CUBIC)
             ])
+        dtype = numpy.int32 if self.lib == 'ffmpeg' else numpy.uint8
+        self.range_ = (0.0, (65535.0 if self.lib == 'ffmpeg' else 255.0))
         if (_ := opt['resize']) is not None:
             width, height = _
         self.info = [
-            *self.info_func(),  # Time in milliseconds, frame count, start/end
             width, height, fps, frame_count,
-            numpy.ndarray, numpy.uint8
+            numpy.ndarray, dtype
         ]
         self.channel_order = channel_order if self.lib == 'ffmpeg' else 'bgr'
 
@@ -122,16 +118,13 @@ class DataLoader:
         Parameters
         ----------
         idx : int
-        from 0 to 8
-        0: Current time in milliseconds if framerate is available
-        1: Current frame number
-        2: Relative time: 0 if at the beginning, 1 at the end
-        3: Height
-        4: Width
-        5: Framerate if available
-        6: Total frame count
-        7: Returning object type of read()
-        8: Returning data type
+        from 0 to 5
+        0: Height
+        1: Width
+        2: Framerate if available
+        3: Total frame count
+        4: Returning object type of read()
+        5: Returning data type
 
         Returns
         -------
@@ -174,6 +167,8 @@ class DataWriter:
             'vtag': {
                 'avc1': 'mp4',
                 'hvc1': 'mov',
+                'av01': 'mp4',
+                'vp09': 'webm'
             },
             'encoder': {
                 'h264': 'mp4',
@@ -183,6 +178,8 @@ class DataWriter:
                 'hevc': 'mov',
                 'libx265': 'mov',
                 'hevc_nvenc': 'mov',
+                'av1': 'mp4',
+                'vp9': 'webm'
             }
         }
     }
@@ -222,20 +219,21 @@ class DataWriter:
             elif self.lib == 'ffmpeg':
                 command = [
                     os.path.join(ffmpeg_bin_path, 'ffmpeg'),
+                    '-loglevel', 'error',
                     '-f', 'rawvideo',
-                    '-pix_fmt', f'{channel_order}24',
+                    '-pix_fmt', f'{channel_order}48',
                     '-s', '%dx%d' % res, '-r', str(fps),
                     '-i', '-',
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
                     *([] if (_ := opt['out_fps']) is None else ['-r', str(_)]),
                     '-c:v', opt['encoder'],
                     *([] if (_ := opt['pix_fmt']) is None else ['-pix_fmt', str(_)]),
-                    *(['-tag:v', 'hvc1'] if opt['encoder'] in ('hevc', 'libx265') else []),
+                    *(['-tag:v', 'hvc1'] if opt['encoder'] in ('hevc', 'hevc_nvenc', 'libx265') else []),
                     *([] if (_ := opt['crf']) is None else ['-crf', str(_)]),
-                    *([] if (_ := [opt['ffmpeg-params'].split(' ')]) else _),
+                    *([] if (_ := opt['ffmpeg-params']) is None else _.split(' ')),
                     self.output_path
                 ]
-                self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE)
                 self.write_func = lambda frame: (self.pipe.stdin.write(frame.tobytes()), self.pipe.stdin.flush())
         elif self.type == 'img':
             self.output_path = utils.folder.check_dir_availability(output_path)
@@ -245,21 +243,20 @@ class DataWriter:
             elif self.lib == 'ffmpeg':
                 command = [
                     os.path.join(ffmpeg_bin_path, 'ffmpeg'),
-                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}24',
+                    '-loglevel', 'error',
+                    '-f', 'rawvideo', '-pix_fmt', f'{channel_order}48',
                     '-s', '%dx%d' % res,
                     '-i', '-',
                     *([] if (_ := opt['resize']) is None else ['-s', '%dx%d' % _]),
-                    *([] if (_ := [opt['ffmpeg-params'].split(' ')]) else _),
+                    *([] if (_ := opt['ffmpeg-params']) is None else _.split(' ')),
                     f'{self.output_path}/%d.{self.ext}'
                 ]
-                self.pipe = subprocess.Popen(
-                    command,
-                    stdin=subprocess.PIPE, stderr=subprocess.PIPE,
-                    close_fds=True
-                )
+                self.pipe = subprocess.Popen(command, stdin=subprocess.PIPE)
                 self.write_func = lambda frame: (self.pipe.stdin.write(frame.tobytes()), self.pipe.stdin.flush())
         if self.lib == 'ffmpeg':
             print(' '.join(command))
+        self.dtype = 'uint16' if self.lib == 'ffmpeg' else 'uint8'
+        self.range_ = (0.0, (65535.0 if self.lib == 'ffmpeg' else 255.0))
         self.channel_order = channel_order if self.lib == 'ffmpeg' else 'bgr'
         self.thread = threading.Thread()
         self.thread.start()
@@ -283,17 +280,12 @@ class DataWriter:
 class DataBuffer:
     def __init__(self, video: DataLoader):
         self.video = video
-        self.buff = numpy.empty(
-            (2, *map(self.video.get, (4, 3)), 3),
-            dtype=self.video.get(8)
-        )
         self.buff = utils.tensor.Tensor(
             tensor=numpy.empty(
-                (2, *map(self.video.get, (4, 3)), 3),
-                dtype=self.video.get(8)),
+                (2, *map(self.video.get, (1, 0)), 3),
+                dtype=self.video.get(5)),
             shape_order='fhwc', channel_order=self.video.channel_order,
-            range_=(0, 255)
-        )
+            range_=video.range_)
         self.count = 0
         # Thread
         self.get_thread = lambda: threading.Thread(target=self.get_frame_ready)
@@ -305,7 +297,7 @@ class DataBuffer:
         del self.thread
         if last:
             i = 1 if self.count else 0
-            return self.buff[i: i+1]
+            return self.buff[[i]]
         returning = self.buff[[self.count]]
         self.thread = self.get_thread()
         self.thread.start()

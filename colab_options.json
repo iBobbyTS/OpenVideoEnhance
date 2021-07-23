@@ -1,0 +1,44 @@
+{
+  "global_opt": {
+    "ffmpeg_bin_path": "",
+    "process_batch_size": 100
+  },
+  "input_opt": {
+    "path": "/content/frame_test.mov"
+  },
+  "temp_opt": {
+    "path": "../tmp",
+    "remove": false
+  },
+  "preprocess_opt": {
+    "lib": "ffmpeg",
+    "frame_range": [0, 0],
+    "resize": [128, 96],
+    "": "Only for FFmpeg",
+    "decoder": null
+  },
+  "model_opt": {
+    "empty_cache": true,
+    "default_model_dir": "/content/model_weights",
+    "to_do": ["edvr"],
+    "model_path": [null, null, null, null, null],
+    "kwargs": [{"model_name":"l4v"}, {"sf": 4}, {"sf": 3}, {"mode": "nearest"}, {"sf": 2}]
+  },
+  "postprocess_opt": {
+    "type": "vid",
+    "lib": "ffmpeg",
+    "fourcc": "avc1",
+    "encoder": "libx265",
+    "pix_fmt": "yuv420p",
+    "resize": null,
+    "in_fps": null,
+    "out_fps": null,
+    "crf": null,
+    "ffmpeg-params": null,
+    "ext": "jpg",
+    "dtype": "uint8"
+  },
+  "output_opt": {
+    "path": "/content/drive/MyDrive/out/o"
+  }
+}
